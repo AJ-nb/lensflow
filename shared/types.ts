@@ -1,11 +1,12 @@
 import type { VisualAnalysis } from "./visual-analysis";
 import type { VisualOverview } from "./visual-overview";
+import { isThemeId, type ThemeId, type ThemeMode } from "./themes";
 
 export type AnalysisMode = "fast" | "balanced" | "deep";
 export type AnalysisFlow = "overview-first" | "full-direct";
 export type ImageQuality = "low" | "medium" | "high";
 
-export const CURRENT_SETTINGS_VERSION = 3;
+export const CURRENT_SETTINGS_VERSION = 4;
 const LEGACY_DEFAULT_API_BASE_URL = "https://api.biyuan.ai/v1";
 
 export interface AppSettings {
@@ -20,6 +21,8 @@ export interface AppSettings {
   imageQuality: ImageQuality;
   autoAnalyze: boolean;
   outputLanguage: "zh-CN" | "en";
+  themeMode: ThemeMode;
+  themeId: ThemeId;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -33,7 +36,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   analysisMode: "fast",
   imageQuality: "medium",
   autoAnalyze: false,
-  outputLanguage: "zh-CN"
+  outputLanguage: "zh-CN",
+  themeMode: "daily",
+  themeId: "cinnabar-celadon"
 };
 
 export function normalizeSettings(value: Partial<AppSettings> = {}): AppSettings {
@@ -59,10 +64,12 @@ export function normalizeSettings(value: Partial<AppSettings> = {}): AppSettings
     imageQuality: ["low", "medium", "high"].includes(value.imageQuality ?? "")
       ? value.imageQuality as ImageQuality
       : DEFAULT_SETTINGS.imageQuality,
-    autoAnalyze: isCurrentSettings && typeof value.autoAnalyze === "boolean"
+    autoAnalyze: (isCurrentSettings || value.settingsVersion === 3) && typeof value.autoAnalyze === "boolean"
       ? value.autoAnalyze
       : DEFAULT_SETTINGS.autoAnalyze,
-    outputLanguage: value.outputLanguage === "en" ? "en" : DEFAULT_SETTINGS.outputLanguage
+    outputLanguage: value.outputLanguage === "en" ? "en" : DEFAULT_SETTINGS.outputLanguage,
+    themeMode: value.themeMode === "manual" ? "manual" : DEFAULT_SETTINGS.themeMode,
+    themeId: isThemeId(value.themeId) ? value.themeId : DEFAULT_SETTINGS.themeId
   };
 }
 
@@ -335,7 +342,6 @@ export interface ConnectionTestResult {
 export type RuntimeRequest =
   | { type: "GET_SETTINGS" }
   | { type: "SAVE_SETTINGS"; settings: Partial<AppSettings> }
-  | { type: "ENABLE_PAGE_PICKER" }
   | { type: "TEST_CONNECTION"; settings: Partial<AppSettings> }
   | { type: "SET_SELECTION"; source: ImageSource }
   | { type: "GET_SELECTION" }

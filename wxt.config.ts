@@ -2,21 +2,16 @@ import { defineConfig } from "wxt";
 
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
-  hooks: {
-    "build:manifestGenerated": (_wxt, manifest) => {
-      delete manifest.host_permissions;
-    }
-  },
   webExt: {
     disabled: true
   },
   manifest: {
     name: "砚台",
     description: "从网页图片提取主体结构、完整 CMF、相关参考与重建参数，并提供图片编辑。",
-    version: "0.6.1",
+    version: "0.6.2",
     minimum_chrome_version: "122",
-    permissions: ["storage", "contextMenus", "sidePanel", "activeTab", "scripting"],
-    optional_host_permissions: ["http://*/*", "https://*/*"],
+    permissions: ["storage", "contextMenus", "sidePanel", "scripting"],
+    host_permissions: ["http://*/*", "https://*/*"],
     action: {
       default_title: "打开砚台"
     },
