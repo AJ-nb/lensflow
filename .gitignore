@@ -1,0 +1,15 @@
+node_modules/
+node_modules.incomplete-*/
+.wxt/
+.output/
+.playwright-cli/
+output/
+coverage/
+public/mediapipe/
+*.zip
+*.crx
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
