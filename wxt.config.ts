@@ -8,7 +8,7 @@ export default defineConfig({
   manifest: {
     name: "砚台",
     description: "从网页图片提取主体结构、完整 CMF、相关参考与重建参数，并提供图片编辑。",
-    version: "0.6.2",
+    version: "0.6.3",
     minimum_chrome_version: "122",
     permissions: ["storage", "contextMenus", "sidePanel", "scripting"],
     host_permissions: ["http://*/*", "https://*/*"],
