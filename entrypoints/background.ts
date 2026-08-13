@@ -44,9 +44,12 @@ export default defineBackground(() => {
     await Promise.all([setSelection(source), openPanel]);
   });
 
-  browser.runtime.onMessage.addListener((request: RuntimeRequest, sender) => (
-    respondToRuntimeRequest(request, sender)
-  ));
+  browser.runtime.onMessage.addListener((request: RuntimeRequest, sender, sendResponse) => {
+    // Keep the Chrome MV3 message channel open explicitly. Some Chromium builds
+    // finish a Promise-returning listener without forwarding its resolved value.
+    void respondToRuntimeRequest(request, sender).then(sendResponse);
+    return true;
+  });
 
   browser.runtime.onConnect.addListener((port) => {
     if (port.name !== "yantai-sidepanel") return;

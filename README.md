@@ -2,7 +2,7 @@
 
 砚台是一款面向设计师的开源 Chrome Manifest V3 扩展。它从网页或本地图片中提取设计语言、设计手法、造型结构、完整 CMF、提示词和结构化 JSON，并提供本地 OCR、相似图、主体分区、SVG、Eagle 与 img2threejs 交接能力。
 
-当前版本：`0.6.2`。公开仓库：`AJ-nb/luck-power`。
+当前版本：`0.6.3`。公开仓库：`AJ-nb/luck-power`。
 
 ![砚台 Logo](public/brand/yantai-logo.png)
 
@@ -61,6 +61,16 @@ npm run build
 ```bash
 npm run zip
 ```
+
+### 给其他用户安装
+
+1. 下载 Release 中的 `luck-power-yantai-*-chrome.zip`，先完整解压，不能直接从压缩包运行。
+2. 打开 `chrome://extensions` 并启用“开发者模式”。
+3. 点击“加载已解压的扩展程序”，选择**直接包含 `manifest.json`** 的文件夹。
+4. 确认扩展已启用，并允许新增的网页访问权限；随后点击扩展图标打开侧边栏。
+5. 升级后不要删除旧扩展。覆盖原文件并点击“重新加载”，再关闭旧侧边栏并重新打开，才能保留同一扩展 ID 下的数据。
+
+若提示“扩展后台没有返回响应”，先检查 Chrome 版本不低于 122、安装目录内同时存在 `manifest.json` 与 `background.js`。`0.6.3` 已兼容不同 Chromium 对异步后台响应的差异，并会对只读初始化自动重试。
 
 ### 正式升级与数据保留
 

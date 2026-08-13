@@ -48,8 +48,8 @@ import {
 import { createCroppedImageSource, cropImageDataUrl, restoreOriginalImageSource } from "../../lib/workbench";
 import {
   formatRuntimeMessageError,
-  isRetryableRuntimeRequest,
-  isTransientMessageChannelError
+  RUNTIME_MESSAGE_RETRY_DELAYS_MS,
+  shouldRetryRuntimeMessage
 } from "../../shared/runtime-messaging";
 import { STORAGE_KEYS } from "../../shared/storage";
 import { hasUrlAccesses, requestUrlAccess, requestUrlAccesses } from "../../shared/permissions";
@@ -105,7 +105,7 @@ interface SessionState {
 }
 
 const PREVIEW_SETTINGS_KEY = "visualLensPreviewSettings";
-const APP_VERSION = getBrowserRuntime()?.getManifest().version ?? "0.6.2";
+const APP_VERSION = getBrowserRuntime()?.getManifest().version ?? "0.6.3";
 let previewSession: SessionState = { source: null, references: [], overview: null, result: null };
 let previewApiKey = "";
 
@@ -2241,14 +2241,21 @@ async function sendRequest<T = unknown>(request: RuntimeRequest): Promise<T> {
 async function sendRuntimeMessage<T>(
   runtime: typeof browser.runtime,
   request: RuntimeRequest
-): Promise<RuntimeResponse<T>> {
-  try {
-    return (await runtime.sendMessage(request)) as RuntimeResponse<T>;
-  } catch (error) {
-    if (!isRetryableRuntimeRequest(request) || !isTransientMessageChannelError(error)) throw error;
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    return (await runtime.sendMessage(request)) as RuntimeResponse<T>;
+): Promise<RuntimeResponse<T> | undefined> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RUNTIME_MESSAGE_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = (await runtime.sendMessage(request)) as RuntimeResponse<T> | undefined;
+      if (!shouldRetryRuntimeMessage(request, response)) return response;
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryRuntimeMessage(request, undefined, error)) throw error;
+    }
+    const delay = RUNTIME_MESSAGE_RETRY_DELAYS_MS[attempt];
+    if (delay !== undefined) await new Promise((resolve) => setTimeout(resolve, delay));
   }
+  if (lastError !== undefined) throw lastError;
+  return undefined;
 }
 
 async function persistAnalysisResult(result: AnalysisResult): Promise<void> {
