@@ -102,7 +102,7 @@ interface SessionState {
 }
 
 const PREVIEW_SETTINGS_KEY = "visualLensPreviewSettings";
-const APP_VERSION = getBrowserRuntime()?.getManifest().version ?? "0.6.0";
+const APP_VERSION = getBrowserRuntime()?.getManifest().version ?? "0.6.1";
 let previewSession: SessionState = { source: null, references: [], overview: null, result: null };
 let previewApiKey = "";
 
@@ -1115,7 +1115,7 @@ export default function App() {
         </nav>
       </header>
 
-      {error && <div className="error-banner" role="alert"><AlertTriangle size={16} /><span>{error}<small>请检查 API 设置、网络或输入后重试。</small></span><button title="关闭" aria-label="关闭错误提示" onClick={() => setError("")}><X size={16} /></button></div>}
+      {error && <div className="error-banner" role="alert"><AlertTriangle size={16} /><span>{error}<small>{errorGuidance(error)}</small></span><button title="关闭" aria-label="关闭错误提示" onClick={() => setError("")}><X size={16} /></button></div>}
       <InteractionFeedback notice={feedback} onDismiss={() => setFeedback(null)} />
       <input ref={fileInputRef} name="source-image" type="file" accept="image/*" hidden onChange={(event) => {
         const file = event.target.files?.[0];
@@ -2347,6 +2347,19 @@ function isAbortError(error: unknown): boolean {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error || "未知错误");
+}
+
+function errorGuidance(message: string): string {
+  if (/网页选图|标签页|系统页|扩展页|新标签页|注入选图|工具栏图标|文件网址/.test(message)) {
+    return "网页选图在本地运行，与 API Key 或模型设置无关。";
+  }
+  if (/API|模型|密钥|端点|连接|HTTPS|网络/.test(message)) {
+    return "请检查 API 地址、密钥、模型与网络后重试。";
+  }
+  if (/图片|文件|OCR|主体|裁切|SVG/.test(message)) {
+    return "请检查图片或文件状态后重试，已有档案不会被删除。";
+  }
+  return "请按上方原因处理后重试。";
 }
 
 function referenceViewLabel(viewKind: ReferenceViewKind): string {
