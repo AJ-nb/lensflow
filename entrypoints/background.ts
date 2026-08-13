@@ -1,5 +1,6 @@
 import { defineBackground } from "wxt/utils/define-background";
 import { normalizeApiBaseUrl } from "../shared/api-models";
+import { getPagePickerInjectionError, getPagePickerUrlError } from "../shared/page-picker";
 import { STORAGE_KEYS } from "../shared/storage";
 import {
   CURRENT_SETTINGS_VERSION,
@@ -117,17 +118,18 @@ async function getSettings(): Promise<AppSettings> {
 }
 
 async function enablePagePicker(): Promise<{ tabId: number }> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !tab.url || !/^https?:\/\//i.test(tab.url)) {
-    throw new Error("当前页面不支持网页选图，请打开普通 http 或 https 网页后重试。");
-  }
+  const [tab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+  if (tab?.id === undefined) throw new Error("没有找到当前活动标签页，请回到目标网页后重试。");
+
+  const urlError = getPagePickerUrlError(tab.url ?? tab.pendingUrl);
+  if (urlError) throw new Error(urlError);
   try {
     await browser.scripting.executeScript({
       target: { tabId: tab.id },
       files: ["/content-scripts/content.js"]
     });
   } catch (error) {
-    throw new Error(`无法在当前页面开启选图：${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(getPagePickerInjectionError(error));
   }
   return { tabId: tab.id };
 }

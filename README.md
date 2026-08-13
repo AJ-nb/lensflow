@@ -2,7 +2,7 @@
 
 砚台是一款面向设计师的开源 Chrome Manifest V3 扩展。它从网页或本地图片中提取设计语言、设计手法、造型结构、完整 CMF、提示词和结构化 JSON，并提供本地 OCR、相似图、主体分区、SVG、Eagle 与 img2threejs 交接能力。
 
-当前版本：`0.6.0`。公开仓库：`AJ-nb/luck-power`。
+当前版本：`0.6.1`。公开仓库：`AJ-nb/luck-power`。
 
 ![砚台 Logo](public/brand/yantai-logo.png)
 
