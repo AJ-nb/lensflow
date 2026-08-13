@@ -18,6 +18,7 @@ import {
   LoaderCircle,
   Maximize2,
   PackageCheck,
+  Palette,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -27,6 +28,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Shuffle,
   Star,
   Trash2,
   Upload,
@@ -53,6 +55,7 @@ import { STORAGE_KEYS } from "../../shared/storage";
 import { hasUrlAccesses, requestUrlAccess, requestUrlAccesses } from "../../shared/permissions";
 import { normalizeApiBaseUrl } from "../../shared/api-models";
 import { buildEvidenceAnchors, buildEvidenceLinks, matchEvidenceAnchorIds } from "../../shared/evidence";
+import { randomThemeId, resolveTheme, VISUAL_THEMES, type ThemeId, type ThemeMode } from "../../shared/themes";
 import type { ReconstructionReadiness } from "../../shared/reconstruction-package";
 import {
   DEFAULT_SETTINGS,
@@ -102,7 +105,7 @@ interface SessionState {
 }
 
 const PREVIEW_SETTINGS_KEY = "visualLensPreviewSettings";
-const APP_VERSION = getBrowserRuntime()?.getManifest().version ?? "0.6.1";
+const APP_VERSION = getBrowserRuntime()?.getManifest().version ?? "0.6.2";
 let previewSession: SessionState = { source: null, references: [], overview: null, result: null };
 let previewApiKey = "";
 
@@ -145,6 +148,7 @@ export default function App() {
   const [feedback, setFeedback] = useState<FeedbackNotice | null>(null);
   const [workbenchTool, setWorkbenchTool] = useState<WorkbenchTool>("regions");
   const [sourcePreviewMode, setSourcePreviewMode] = useState<"fit" | "actual">("fit");
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const referenceFileInputRef = useRef<HTMLInputElement>(null);
   const activeSourceIdRef = useRef<string | null>(null);
@@ -155,13 +159,17 @@ export default function App() {
     void initialize();
     const runtime = getBrowserRuntime();
     if (!runtime?.onMessage) return;
+    const sidePanelPort = runtime.connect({ name: "yantai-sidepanel" });
     const listener = (message: { type?: string; source?: ImageSource }) => {
       if (message.type === "SELECTION_UPDATED" && message.source && message.source.id !== activeSourceIdRef.current) {
         void acceptSource(message.source);
       }
     };
     runtime.onMessage.addListener(listener);
-    return () => runtime.onMessage.removeListener(listener);
+    return () => {
+      runtime.onMessage.removeListener(listener);
+      sidePanelPort.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -196,6 +204,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!themeMenuOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (event.target instanceof Element && !event.target.closest(".theme-control")) setThemeMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setThemeMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [themeMenuOpen]);
+
+  useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
 
@@ -215,6 +239,10 @@ export default function App() {
     : overview?.measured.width && overview.measured.height
       ? overview.measured.width / overview.measured.height
       : source?.declaredWidth && source.declaredHeight ? source.declaredWidth / source.declaredHeight : 4 / 3;
+  const activeTheme = useMemo(
+    () => resolveTheme(settings.themeMode, settings.themeId),
+    [settings.themeMode, settings.themeId]
+  );
 
   async function initialize() {
     try {
@@ -358,11 +386,14 @@ export default function App() {
     }
   }
 
-  async function enablePagePicker() {
+  async function changeTheme(themeMode: ThemeMode, themeId: ThemeId) {
     try {
-      await sendRequest({ type: "ENABLE_PAGE_PICKER" });
-      setStatus("网页选图已开启");
-      showFeedback("success", "网页选图已开启", "将鼠标移到当前网页的图片上，再点击“砚台分析”。");
+      const saved = await sendRequest<AppSettings>({ type: "SAVE_SETTINGS", settings: { themeMode, themeId } });
+      setSettings(saved);
+      setDraftSettings((current) => ({ ...current, themeMode: saved.themeMode, themeId: saved.themeId }));
+      settingsRef.current = saved;
+      const theme = resolveTheme(saved.themeMode, saved.themeId);
+      showFeedback("success", themeMode === "daily" ? "已启用每日灵感" : `已切换为${theme.label}`, theme.description);
     } catch (caught) {
       showError(caught);
     }
@@ -1097,7 +1128,7 @@ export default function App() {
   }
 
   return (
-    <main className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+    <main className="app-shell" data-theme={activeTheme.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
       event.preventDefault();
       const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/"));
       if (file) void loadFile(file);
@@ -1107,12 +1138,30 @@ export default function App() {
           <img className="brand-mark" src="/brand/yantai-logo.png" alt="砚台 Logo" width={36} height={36} />
           <div><h1>砚台</h1><p>v{APP_VERSION}</p></div>
         </div>
-        <nav className="top-nav" aria-label="主要功能">
-          <IconTab active={view === "analysis"} title="分析" label="分析" onClick={() => setView("analysis")}><ScanSearch size={17} /></IconTab>
-          <IconTab active={view === "workbench"} title="设计工作台" label="工作台" onClick={() => setView("workbench")}><Wrench size={17} /></IconTab>
-          <IconTab active={view === "archive"} title="设计档案" label="档案" onClick={() => setView("archive")}><Archive size={17} /></IconTab>
-          <IconTab active={view === "settings"} title="设置" label="设置" onClick={() => setView("settings")}><Settings size={17} /></IconTab>
-        </nav>
+        <div className="header-actions">
+          <nav className="top-nav" aria-label="主要功能">
+            <IconTab active={view === "analysis"} title="分析" label="分析" onClick={() => setView("analysis")}><ScanSearch size={17} /></IconTab>
+            <IconTab active={view === "workbench"} title="设计工作台" label="工作台" onClick={() => setView("workbench")}><Wrench size={17} /></IconTab>
+            <IconTab active={view === "archive"} title="设计档案" label="档案" onClick={() => setView("archive")}><Archive size={17} /></IconTab>
+            <IconTab active={view === "settings"} title="设置" label="设置" onClick={() => setView("settings")}><Settings size={17} /></IconTab>
+          </nav>
+          <div className="theme-control">
+            <button className="theme-trigger" title="切换界面主题" aria-label="切换界面主题" aria-expanded={themeMenuOpen} onClick={() => setThemeMenuOpen((open) => !open)}><Palette size={18} /></button>
+            {themeMenuOpen && <ThemeMenu
+              activeThemeId={activeTheme.id}
+              mode={settings.themeMode}
+              onSelect={(mode, id) => {
+                setThemeMenuOpen(false);
+                void changeTheme(mode, id);
+              }}
+              onRandom={() => {
+                const next = randomThemeId(activeTheme.id);
+                setThemeMenuOpen(false);
+                void changeTheme("manual", next);
+              }}
+            />}
+          </div>
+        </div>
       </header>
 
       {error && <div className="error-banner" role="alert"><AlertTriangle size={16} /><span>{error}<small>{errorGuidance(error)}</small></span><button title="关闭" aria-label="关闭错误提示" onClick={() => setError("")}><X size={16} /></button></div>}
@@ -1210,9 +1259,6 @@ export default function App() {
               <button className={analysisView === "json" ? "active" : ""} disabled={!result} title={result ? "查看完整 JSON" : "先生成完整 JSON"} onClick={() => setAnalysisView("json")}><FileJson size={15} />JSON</button>
             </div>
           </div>
-          <button className="page-picker-action" onClick={() => void enablePagePicker()}>
-            <ScanSearch size={17} /><span><strong>从当前网页选择</strong><small>只在本次页面启用图片悬浮选择</small></span>
-          </button>
           <ReferenceTray
             references={references}
             selectedViewKind={referenceViewKind}
@@ -1327,6 +1373,25 @@ export default function App() {
 
 function IconTab({ active, title, label, onClick, children }: { active: boolean; title: string; label: string; onClick: () => void; children: ReactNode }) {
   return <button className={active ? "active" : ""} title={title} aria-label={title} aria-current={active ? "page" : undefined} onClick={onClick}>{children}<span>{label}</span></button>;
+}
+
+function ThemeMenu({ activeThemeId, mode, onSelect, onRandom }: {
+  activeThemeId: ThemeId;
+  mode: ThemeMode;
+  onSelect: (mode: ThemeMode, id: ThemeId) => void;
+  onRandom: () => void;
+}) {
+  return <section className="theme-menu" aria-label="界面主题">
+    <header><span><strong>界面灵感</strong><small>纹理不会覆盖分析图片</small></span><button title="随机切换主题" aria-label="随机切换主题" onClick={onRandom}><Shuffle size={16} /></button></header>
+    <button className={`daily-theme ${mode === "daily" ? "active" : ""}`} onClick={() => onSelect("daily", activeThemeId)}>
+      <span className="daily-mark"><Palette size={16} /></span><span><strong>每日灵感</strong><small>每天稳定切换一套配色</small></span>{mode === "daily" && <Check size={15} />}
+    </button>
+    <div className="theme-grid">{VISUAL_THEMES.map((theme) => <button key={theme.id} className={mode === "manual" && activeThemeId === theme.id ? "active" : ""} title={theme.description} onClick={() => onSelect("manual", theme.id)}>
+      <span className="theme-swatches" aria-hidden="true">{theme.colors.map((color) => <i key={color} style={{ backgroundColor: color }} />)}</span>
+      <span><strong>{theme.label}</strong><small>{theme.description}</small></span>
+      {mode === "manual" && activeThemeId === theme.id && <Check size={14} />}
+    </button>)}</div>
+  </section>;
 }
 
 function AnalysisTaskProgress({ task, onCancel, onRetry, onDismiss }: {

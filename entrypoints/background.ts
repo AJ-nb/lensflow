@@ -1,6 +1,5 @@
 import { defineBackground } from "wxt/utils/define-background";
 import { normalizeApiBaseUrl } from "../shared/api-models";
-import { getPagePickerInjectionError, getPagePickerUrlError } from "../shared/page-picker";
 import { STORAGE_KEYS } from "../shared/storage";
 import {
   CURRENT_SETTINGS_VERSION,
@@ -13,6 +12,9 @@ import {
 } from "../shared/types";
 
 export default defineBackground(() => {
+  const sidePanelPorts = new Set<Browser.runtime.Port>();
+  let activePickerTabId: number | undefined;
+
   browser.runtime.onInstalled.addListener(async () => {
     await browser.contextMenus.removeAll();
     browser.contextMenus.create({
@@ -45,6 +47,54 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((request: RuntimeRequest, sender) => (
     respondToRuntimeRequest(request, sender)
   ));
+
+  browser.runtime.onConnect.addListener((port) => {
+    if (port.name !== "yantai-sidepanel") return;
+    sidePanelPorts.add(port);
+    void enablePagePickerForActiveTab();
+    port.onDisconnect.addListener(() => {
+      sidePanelPorts.delete(port);
+      if (sidePanelPorts.size === 0) void disableActivePagePicker();
+    });
+  });
+
+  browser.tabs.onActivated.addListener(() => {
+    if (sidePanelPorts.size > 0) void switchPagePickerToActiveTab();
+  });
+
+  browser.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+    if (sidePanelPorts.size > 0 && changeInfo.status === "complete") void enablePagePickerForActiveTab();
+  });
+
+  async function switchPagePickerToActiveTab(): Promise<void> {
+    await disableActivePagePicker();
+    await enablePagePickerForActiveTab();
+  }
+
+  async function disableActivePagePicker(): Promise<void> {
+    if (activePickerTabId === undefined) return;
+    const tabId = activePickerTabId;
+    activePickerTabId = undefined;
+    try {
+      await browser.tabs.sendMessage(tabId, { type: "DISABLE_PAGE_PICKER" });
+    } catch {
+      // The tab may have navigated or closed already.
+    }
+  }
+
+  async function enablePagePickerForActiveTab(): Promise<void> {
+    const [tab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tab?.id === undefined || !isOrdinaryWebPage(tab.url ?? tab.pendingUrl)) return;
+    try {
+      await browser.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["/content-scripts/content.js"]
+      });
+      activePickerTabId = tab.id;
+    } catch (error) {
+      console.warn("[砚台] 当前网页自动选图未启用", error);
+    }
+  }
 });
 
 async function respondToRuntimeRequest(
@@ -68,8 +118,6 @@ async function handleRequest(request: RuntimeRequest, sender: Browser.runtime.Me
       return getSettings();
     case "SAVE_SETTINGS":
       return saveSettings(request.settings);
-    case "ENABLE_PAGE_PICKER":
-      return enablePagePicker();
     case "SET_SELECTION": {
       const source: ImageSource = {
         ...request.source,
@@ -117,21 +165,8 @@ async function getSettings(): Promise<AppSettings> {
   return normalized;
 }
 
-async function enablePagePicker(): Promise<{ tabId: number }> {
-  const [tab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
-  if (tab?.id === undefined) throw new Error("没有找到当前活动标签页，请回到目标网页后重试。");
-
-  const urlError = getPagePickerUrlError(tab.url ?? tab.pendingUrl);
-  if (urlError) throw new Error(urlError);
-  try {
-    await browser.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["/content-scripts/content.js"]
-    });
-  } catch (error) {
-    throw new Error(getPagePickerInjectionError(error));
-  }
-  return { tabId: tab.id };
+function isOrdinaryWebPage(value?: string): boolean {
+  return Boolean(value && /^https?:\/\//i.test(value));
 }
 
 async function saveSettings(patch: Partial<AppSettings>): Promise<AppSettings> {

@@ -34,7 +34,9 @@ const backupSettingsSchema = z.object({
   analysisMode: z.enum(["fast", "balanced", "deep"]),
   imageQuality: z.enum(["low", "medium", "high"]),
   autoAnalyze: z.boolean(),
-  outputLanguage: z.enum(["zh-CN", "en"])
+  outputLanguage: z.enum(["zh-CN", "en"]),
+  themeMode: z.enum(["daily", "manual"]).optional(),
+  themeId: z.enum(["cinnabar-celadon", "mineral-gold", "indigo-coral", "ink-neon", "lacquer-pop", "woodblock-clash"]).optional()
 });
 
 const analysisArchiveSchema = z.object({

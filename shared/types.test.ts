@@ -27,4 +27,16 @@ describe("settings normalization", () => {
     expect(DEFAULT_SETTINGS.rememberApiKey).toBe(false);
     expect(normalizeSettings({ settingsVersion: 2, apiKey: "legacy-key" }).rememberApiKey).toBe(true);
   });
+
+  it("adds a daily theme without resetting version 3 analysis preferences", () => {
+    const migrated = normalizeSettings({ settingsVersion: 3, autoAnalyze: true });
+    expect(migrated.autoAnalyze).toBe(true);
+    expect(migrated.themeMode).toBe("daily");
+    expect(migrated.themeId).toBe("cinnabar-celadon");
+  });
+
+  it("preserves supported manual themes and rejects unknown theme ids", () => {
+    expect(normalizeSettings({ themeMode: "manual", themeId: "indigo-coral" }).themeId).toBe("indigo-coral");
+    expect(normalizeSettings({ themeMode: "manual", themeId: "unknown" as never }).themeId).toBe(DEFAULT_SETTINGS.themeId);
+  });
 });

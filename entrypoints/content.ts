@@ -37,6 +37,10 @@ export default defineContentScript({
     let activeImage: HTMLImageElement | null = null;
     let disposed = false;
 
+    const onRuntimeMessage = (message: { type?: string }) => {
+      if (message.type === "DISABLE_PAGE_PICKER") dispose();
+    };
+
     const MAX_SNAPSHOT_EDGE = 1536;
     const MAX_SNAPSHOT_BYTES = 1_500_000;
 
@@ -201,6 +205,7 @@ export default defineContentScript({
       document.removeEventListener("scroll", updatePosition, true);
       window.removeEventListener("resize", updatePosition);
       trigger.removeEventListener("click", onClick);
+      browser.runtime.onMessage.removeListener(onRuntimeMessage);
       trigger.remove();
       delete document.documentElement.dataset.yantaiPicker;
     };
@@ -209,6 +214,7 @@ export default defineContentScript({
     document.addEventListener("scroll", updatePosition, true);
     window.addEventListener("resize", updatePosition);
     trigger.addEventListener("click", onClick);
+    browser.runtime.onMessage.addListener(onRuntimeMessage);
 
     ctx.onInvalidated(dispose);
   }
