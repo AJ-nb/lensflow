@@ -1,0 +1,26 @@
+Lensflow - Third-Party Notices
+
+This distribution includes local runtime and model assets from the following
+projects. The Lensflow source code remains licensed under its repository
+license; these third-party components retain their own licenses.
+
+1. Tesseract.js and tesseract.js-core
+   Copyright their respective contributors.
+   License: Apache License 2.0.
+   Source: https://github.com/naptha/tesseract.js
+   The bundled worker also contains MIT/BSD-licensed buffer, ieee754,
+   regenerator-runtime, and zlib.js components. Their notices are preserved in
+   the minified worker header and worker.min.js.LICENSE.txt upstream.
+
+2. chi_sim and eng traineddata
+   Source: https://github.com/naptha/tessdata
+   License information is provided by the upstream project.
+
+3. MediaPipe Tasks Vision and magic_touch interactive segmentation model
+   Copyright Google LLC and contributors.
+   License: Apache License 2.0.
+   Source: https://github.com/google-ai-edge/mediapipe
+   Model source: MediaPipe interactive segmenter magic_touch model.
+   Privacy notice: https://developers.google.com/mediapipe/solutions/privacy
+
+A copy of the Apache License 2.0 is included as APACHE-2.0.txt in this folder.

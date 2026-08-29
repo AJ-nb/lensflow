@@ -1,0 +1,3 @@
+:root { --sl-color-accent-low:#ffe3ec; --sl-color-accent:#d8104d; --sl-color-accent-high:#7b0a2f; --sl-color-white:#242225; --sl-color-gray-1:#363236; --sl-color-gray-2:#615b60; --sl-color-gray-3:#8f898d; --sl-color-gray-4:#c7c2bd; --sl-color-gray-5:#e6e2dc; --sl-color-gray-6:#f3f0eb; --sl-color-black:#fbfaf7; --sl-font-system:"Microsoft YaHei UI","PingFang SC",system-ui,sans-serif; }
+:root[data-theme="dark"] { --sl-color-accent-low:#4e1028; --sl-color-accent:#ff6695; --sl-color-accent-high:#ffd3e0; --sl-color-white:#f8f4f6; --sl-color-black:#201d1f; }
+* { letter-spacing:0; }

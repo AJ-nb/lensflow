@@ -1,0 +1,14 @@
+{
+  "name": "@lensflow/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@lensflow/contracts": "0.1.0",
+    "dexie": "^4.4.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": { "typescript": "^5.9.3" }
+}

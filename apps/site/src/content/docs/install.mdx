@@ -1,0 +1,18 @@
+---
+title: 安装与升级
+description: 安装 Lensflow ZIP，并在升级时保留本地数据。
+slug: docs/install
+---
+
+## 手动安装
+
+1. 从 GitHub Release 下载 ZIP 和对应 SHA-256。
+2. 完整解压到固定目录。
+3. 在 Chrome 打开 `chrome://extensions`，启用开发者模式。
+4. 点击“加载已解压的扩展程序”，选择直接包含 `manifest.json` 的目录。
+
+## 升级
+
+升级前在 Lensflow 打开“本地备份与恢复”并导出备份。覆盖原固定目录后，在扩展管理页点击“重新加载”。
+
+不要删除旧扩展后再安装，因为设置和 IndexedDB 与扩展 ID 绑定。商店包和手动包 ID 不同时，使用旧插件导出、新插件导入；导入过程会无条件丢弃 API Key。

@@ -1,45 +1,33 @@
-# 砚台
+# 镜序 Lensflow
 
-砚台是一款面向设计师的开源 Chrome Manifest V3 扩展。它从网页或本地图片中提取设计语言、设计手法、造型结构、完整 CMF、提示词和结构化 JSON，并提供本地 OCR、相似图、主体分区、SVG、Eagle 与 img2threejs 交接能力。
+从网页灵感到可复用创作资产的本地 AI 工作台。Lensflow 是一个 MIT 许可的 Chrome 扩展与产品网站 monorepo，不包含账号、积分、收费、云数据库或跨设备同步。
 
-当前版本：`0.6.3`。公开仓库：`AJ-nb/luck-power`。
+## 工作流
 
-![砚台 Logo](public/brand/yantai-logo.png)
+1. 从网页图片、本地图片或划词开始，完成本地尺寸、比例、哈希和色卡测量。
+2. 使用用户选择的 Provider 生成结构化解构、自然语言提示词和可编辑变体。
+3. 通过风格、主体、构图、色彩、动态五轴及参考关系完成组合和提交预检。
+4. 以 1-10 张持久化批次生成；成功项不会因部分失败丢失，失败位置只能由用户手动补全。
+5. 在扇形卡池中揭示、下载、收入作品集或主动导出到 Eagle。
 
-## 核心能力
+Lensflow 不内置演示素材、模板、关键词或模型目录。模型始终来自认证后的 `${baseUrl}/models`。
 
-- 打开侧边栏即启用当前网页选图、本地上传、粘贴与图片 URL 导入
-- 概览优先或直接完整分析，选择后再生成
-- 设计语言、手法、造型来源假设、相似策略与原创迁移建议
-- 完整 CMF：颜色角色、材料区域、表面处理、连接、磨损与风险
-- HEX、RGB、CMYK、OKLCH 与 Pantone 视觉近似候选
-- 严格 JSON、正向/负向提示词与提示词版本管理
-- 非破坏性裁切、多材料区域、历史对比与颜色校正
-- 本地 OCR、64 位差异哈希相似图、MediaPipe 主体分区与分层 SVG
-- Eagle 标签映射、注释、来源网站、单项导入与独立批处理插件
-- 带证据边界、缺失视图与确定性种子的 img2threejs 交接包
-- 版本化数据备份，支持合并或替换恢复
+## Monorepo
 
-## 安全与隐私
+- `apps/extension`: WXT + React Chrome 扩展、后台任务与网页桥接
+- `apps/site`: Astro + Starlight 产品网站、Studio 与文档
+- `packages/contracts`: Zod 数据、Provider、桥接与发布合同
+- `packages/core`: Dexie 数据库、Provider 适配器和领域逻辑
+- `packages/ui`: 网站和插件共享的生产工作台 UI
+- `integrations/eagle`: Eagle 批处理插件
 
-砚台不内置 API Base URL，也不代理或出售 API 服务。用户必须自行填写 OpenAI API 兼容的 HTTPS 端点与 API Key。
+## Provider
 
-- API Key 默认只保存在浏览器会话存储中，关闭浏览器后清除。
-- 只有用户开启“在此设备长期保存”后，密钥才写入扩展本地存储。
-- 默认备份不包含 API Key；包含密钥必须单独勾选并会显示明文警告。
-- AI 分析和图片编辑会把所选图片、提示词和请求发送到用户配置的 API 服务商。
-- OCR、相似图搜索、调色与主体分区在本地运行，不向配置的 API 发送图片。
-- 扩展获得普通网页访问权限，用于在侧边栏打开期间向当前标签页注入选图层；选图层不在浏览器启动时常驻。
-- 只有用户在网页图片上点击“砚台分析”后，图片才进入侧边栏；打开侧边栏不会自动读取或发送网页图片。
-- 普通网页、用户配置的 API、图片 URL 与本机 Eagle 均使用清单声明的 HTTP(S) 访问权限，不再逐域重复弹窗。
-- 远程 API 必须使用 HTTPS；HTTP 只允许 `localhost`、`127.0.0.1` 与 `::1`。
-- URL 不允许嵌入用户名或密码。
+内置彼源预设 `https://api.biyuan.ai/v1`，并支持自定义 OpenAI-compatible 地址与 ComfyUI API-workflow JSON。Base URL 被视为完整前缀，不会自动追加 `/v1`。
 
-完整说明见 [PRIVACY.md](PRIVACY.md) 与 [SECURITY.md](SECURITY.md)。
+API Key 默认保存在 `chrome.storage.session`。只有用户明确选择“在本机记住”后才写入 `chrome.storage.local`；网页、IndexedDB、日志、诊断包和备份均不能读取密钥。
 
-## 安装
-
-### 从源码构建
+## 本地开发
 
 需要 Node.js 20 或更高版本。
 
@@ -50,90 +38,24 @@ npm test
 npm run build
 ```
 
-在 Chrome 打开 `chrome://extensions`，启用开发者模式，选择“加载已解压的扩展程序”，加载：
-
-```text
-.output/chrome-mv3
-```
-
-生成分发 ZIP：
+扩展构建目录为 `.output/chrome-mv3`。在 `chrome://extensions` 开启开发者模式后，使用“加载已解压的扩展程序”选择该目录。
 
 ```bash
+npm run dev:site
+npm run dev:extension
 npm run zip
 ```
 
-### 给其他用户安装
+真实 API 测试默认关闭。只有显式设置 `LENSFLOW_REAL_API=1` 才可读取本机测试密钥；付费烟测还必须设置 `LENSFLOW_BILLABLE_SMOKE=1`，每项最多一次且不自动重试。
 
-1. 下载 Release 中的 `luck-power-yantai-*-chrome.zip`，先完整解压，不能直接从压缩包运行。
-2. 打开 `chrome://extensions` 并启用“开发者模式”。
-3. 点击“加载已解压的扩展程序”，选择**直接包含 `manifest.json`** 的文件夹。
-4. 确认扩展已启用，并允许新增的网页访问权限；随后点击扩展图标打开侧边栏。
-5. 升级后不要删除旧扩展。覆盖原文件并点击“重新加载”，再关闭旧侧边栏并重新打开，才能保留同一扩展 ID 下的数据。
+## 数据与权限
 
-若提示“扩展后台没有返回响应”，先检查 Chrome 版本不低于 122、安装目录内同时存在 `manifest.json` 与 `background.js`。`0.6.3` 已兼容不同 Chromium 对异步后台响应的差异，并会对只读初始化自动重试。
+Dexie 数据库包含 `captures`、`analyses`、`prompts`、`references`、`generationJobs`、`assets`、`collections`、`historyEvents` 和 `settingsMeta`。旧扩展数据通过导出/导入迁移，导入时无条件丢弃 API Key。
 
-### 正式升级与数据保留
+扩展只要求 `activeTab`、`scripting` 等功能权限以及 Lensflow 正式站点桥接地址。Provider 和 Eagle 地址使用按需可选权限；网页桥接禁止读取密钥、浏览历史、任意文件和任意 URL。
 
-Chrome 的设置和 IndexedDB 数据绑定扩展 ID。正式多人分发应使用同一个 Chrome Web Store 条目；同一扩展 ID 的正常升级会自动保留设置、档案和提示词版本。
+更多信息见 [隐私说明](PRIVACY.md)、[安全政策](SECURITY.md)、[贡献指南](CONTRIBUTING.md) 和 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
-第一次从旧的解压版或不同扩展 ID 迁移时：
+## 许可与边界
 
-1. 在旧版“设置 -> 数据管理”导出完整备份。
-2. 安装新的固定 ID 版本。
-3. 在新版选择“合并现有数据”并导入备份。
-4. 后续只更新同一商店条目，不让用户删除重装。
-
-## API 设置
-
-1. 打开“设置”。
-2. 填写 API Key 和完整 API Base URL，例如 `https://api.example.com/v1`。
-3. 选择密钥仅本次使用或在此设备长期保存。
-4. 点击“连接并读取模型”，确认域名权限。
-5. 从端点返回的目录中选择通用分析模型与图片编辑模型并保存。
-
-模型分类只依据模型 ID。`/models` 通常不声明完整能力，最终以端点实际响应为准。
-
-## Eagle 集成
-
-Chrome 扩展按需访问本地 Eagle API `http://localhost:41595`，用于读取图库、文件夹并完成写入回读。独立 Eagle 插件位于：
-
-```text
-eagle-plugin/visual-lens-bridge
-```
-
-批处理必须先用 `--limit=1` 验证单项写入，再执行全库：
-
-```bash
-node eagle-plugin/visual-lens-bridge/tools/batch-process.mjs --apply --limit=1
-node eagle-plugin/visual-lens-bridge/tools/batch-process.mjs --apply
-```
-
-## 开发验证
-
-```bash
-npm run typecheck
-npm test
-npm run build
-npm run zip
-```
-
-提示词合同与延迟冒烟评测：
-
-```bash
-npm run prompt:eval
-```
-
-评测使用环境变量读取密钥，不将密钥写入仓库。示例见 `promptfoo/README.md`。
-
-## 证据边界
-
-- 单张图片不能确认真实材料牌号、配方、涂镀层、耐刮、耐候或量产工艺。
-- CMYK 是由图像 RGB 换算的参考值，不是印刷打样结果。
-- Pantone 是视觉近似候选，不是分光测色或实体色卡匹配。
-- 造型来源、设计师、设计语言与相似策略均是需要核验的分析候选。
-- 三视图和主体分区属于模型估计，不能替代真实视角、尺寸、隐藏结构或 CAD。
-- 分析结果不能证明专利清白、原创性、材料性能或制造可行性。
-
-## 开源许可
-
-砚台源码使用 [MIT License](LICENSE)。第三方模型与本地运行时保留各自许可，见 `public/vendor/THIRD_PARTY_NOTICES.txt`。
+项目采用 [MIT License](LICENSE)。Lensflow 只实现公开可验证的创作工作流，不复制 Viko 或其他产品的品牌、媒体、逐字文案、私有代码、登录后数据或服务端接口。

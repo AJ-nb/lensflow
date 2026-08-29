@@ -1,0 +1,9 @@
+{
+  "name": "@lensflow/eagle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "node --check plugin/js/plugin.js && node --check plugin/js/mapping.js"
+  }
+}

@@ -1,0 +1,43 @@
+---
+import "../styles/global.css";
+interface Props { title: string; description: string; }
+const { title, description } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={`${base}/favicon.png`} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={new URL(`${base}/media/studio-overview.webp`, Astro.site)} />
+    <title>{title}</title>
+    <slot name="head" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="site-brand" href={`${base}/`}><img src={`${base}/brand/lensflow-mark.png`} width="28" height="28" alt="" /><strong>镜序 Lensflow</strong></a>
+      <nav aria-label="主导航">
+        <a href={`${base}/product`}>产品</a>
+        <a href={`${base}/studio`}>创作空间</a>
+        <a href={`${base}/docs/`}>文档</a>
+        <a href={`${base}/download`}>下载</a>
+        <a href={`${base}/changelog`}>更新日志</a>
+        <a href="https://github.com/AJ-nb/lensflow">GitHub</a>
+      </nav>
+      <a class="header-cta" href={`${base}/download`}>安装插件</a>
+    </header>
+    <slot />
+    <footer class="site-footer">
+      <div><strong>镜序 Lensflow</strong><span>本地 AI 创作工作台</span></div>
+      <nav><a href={`${base}/privacy`}>隐私</a><a href={`${base}/docs/`}>文档</a><a href="https://github.com/AJ-nb/lensflow/blob/main/LICENSE">MIT License</a></nav>
+    </footer>
+  </body>
+</html>

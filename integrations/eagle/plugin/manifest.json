@@ -1,0 +1,18 @@
+{
+  "id": "lensflow-eagle-bridge",
+  "version": "0.2.0",
+  "platform": "all",
+  "arch": "all",
+  "name": "Lensflow · Eagle 工作台",
+  "logo": "/logo.png",
+  "keywords": ["设计", "标签", "批处理", "Lensflow"],
+  "devTools": false,
+  "main": {
+    "url": "index.html",
+    "width": 1080,
+    "minWidth": 860,
+    "height": 720,
+    "minHeight": 620,
+    "resizable": true
+  }
+}

@@ -1,0 +1,23 @@
+---
+title: 隐私、备份与诊断
+description: 了解本地存储、桥接白名单和可脱敏导出。
+slug: docs/privacy
+---
+
+## 密钥隔离
+
+API Key 默认保存在 `chrome.storage.session`。只有主动选择“在此设备记住”时才进入 `chrome.storage.local`。
+
+网页、IndexedDB、日志、诊断包和备份均不得读取密钥。
+
+## 网页桥接
+
+正式桥接只注入 `https://aj-nb.github.io/lensflow/*`，并使用 MessageChannel、Origin 校验、协议版本、会话 nonce、请求 ID、防重放和 2 MB 负载限制。
+
+允许方法：握手、版本、资产查询/写入、任务创建/取消/订阅、下载和打开备份界面。
+
+禁止内容：API Key、浏览历史、任意文件和任意 URL。
+
+## 备份
+
+备份包含用户主动选择的本地资产、任务和非敏感设置。旧 `visual-lens-backup` 可以导入，但其中的 API Key 会被无条件丢弃。

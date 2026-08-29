@@ -1,0 +1,29 @@
+---
+title: Provider 与模型
+description: 配置彼源、OpenAI-compatible 或 ComfyUI。
+slug: docs/provider
+---
+
+## 彼源
+
+预设 Base URL 为 `https://api.biyuan.ai/v1`。Lensflow 把它视为完整前缀，因此模型请求地址是：
+
+```text
+https://api.biyuan.ai/v1/models
+```
+
+不会再自动追加 `/v1`。
+
+## 模型发现
+
+“发现模型”只调用带 Bearer Token 的 `GET /models`。目录缓存 24 小时，也可以手动刷新。未经认证的公开目录不代表用户令牌权限，因此 Lensflow 不硬编码模型数量。
+
+## 能力检测
+
+鉴权、图像输入、Structured Outputs、图片生成、图片编辑和后台任务分别显示 `supported`、`unsupported`、`unknown` 或 `error`。
+
+完整能力检测可能产生请求，必须由用户主动执行。付费生成没有自动重试。
+
+## ComfyUI
+
+导出 API-workflow JSON 后在 Provider 设置中导入。Lensflow 使用浏览器原生 HTTP/WebSocket 与官方 API 对接，不嵌入节点编辑器。

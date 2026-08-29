@@ -1,10 +1,12 @@
 node_modules/
 node_modules.incomplete-*/
 .wxt/
+.astro/
 .output/
 .playwright-cli/
 output/
 coverage/
+dist/
 public/mediapipe/
 *.zip
 *.crx

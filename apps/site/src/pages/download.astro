@@ -1,0 +1,7 @@
+---
+import SiteLayout from "../layouts/SiteLayout.astro";
+---
+<SiteLayout title="下载｜镜序 Lensflow" description="下载 Lensflow Chrome 扩展并查看手动安装和升级说明">
+  <main><section class="page-hero"><div><span class="eyebrow">DOWNLOAD</span><h1>安装到桌面 Chrome</h1><p>首版通过 GitHub Release 提供可审查 ZIP。Chrome Web Store 地址在真实发布前不会显示。</p></div></section>
+  <section class="content-band"><div class="release-panel"><div><span class="eyebrow">LATEST STABLE</span><h2>v0.1.0</h2><div class="release-meta"><div><span>发布时间</span><strong>待首个正式标签</strong></div><div><span>最低 Chrome</span><strong>122</strong></div><div><span>桥接协议</span><strong>v1</strong></div><div><span>SHA-256</span><strong>随 Release 公布</strong></div></div><a class="button primary" href="https://github.com/AJ-nb/lensflow/releases">前往 GitHub Release</a></div><div class="prose"><h2>ZIP 手动安装</h2><ol><li>下载 ZIP 并校验 Release 页面中的 SHA-256。</li><li>解压到固定目录，不要直接从压缩包运行。</li><li>打开 <code>chrome://extensions</code>，启用开发者模式。</li><li>选择“加载已解压的扩展程序”，指向包含 manifest.json 的目录。</li><li>升级前先导出备份，再覆盖原目录并点击重新加载。</li></ol><p class="notice">不同扩展 ID 无法直接共享 IndexedDB。迁移时使用旧插件导出、新插件导入；API Key 永不导入。</p></div></div></section></main>
+</SiteLayout>

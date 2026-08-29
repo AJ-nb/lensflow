@@ -1,0 +1,6 @@
+---
+import SiteLayout from "../layouts/SiteLayout.astro";
+---
+<SiteLayout title="隐私｜镜序 Lensflow" description="Lensflow 本地数据、Provider 请求和网页桥接边界">
+  <main><section class="page-hero"><div><span class="eyebrow">PRIVACY</span><h1>数据流可以被解释，也可以被检查</h1><p>Lensflow 不需要账号和云数据库。网页、插件、Provider 与 Eagle 之间的每条通道都按目的限制。</p></div></section><section class="content-band"><h2>数据边界</h2><div class="detail-grid"><article><h3>只留在本机</h3><p>API Key、IndexedDB 资产、历史、设置元数据、备份和诊断包。密钥不会进入 IndexedDB、网页、日志或备份。</p></article><article><h3>发送到 Provider</h3><p>只有主动分析、生成或编辑时，才发送界面预检列出的提示词、模型和用户确认的参考内容。</p></article><article><h3>网页桥接</h3><p>只允许握手、版本、资产、任务、下载和打开备份界面；禁止密钥、浏览历史、任意文件与任意 URL。</p></article></div></section><section class="content-band alt prose"><h2>本机服务</h2><p>Eagle 仅在用户主动保存时访问 <code>http://localhost:41595</code>，并回读保存数量、文件夹、标签和元数据。ComfyUI 只访问用户配置的本机地址和导入的 API-workflow。</p><h2>默认分析</h2><p>网站不包含默认分析埋点、广告脚本或跨站跟踪。Provider 自身的数据政策由用户选择并负责核验。</p></section></main>
+</SiteLayout>

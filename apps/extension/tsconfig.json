@@ -1,0 +1,14 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "paths": {
+      "@lensflow/contracts": ["../../packages/contracts/src/index.ts"],
+      "@lensflow/core": ["../../packages/core/src/index.ts"],
+      "@lensflow/ui": ["../../packages/ui/src/index.ts"]
+    }
+  }
+}
