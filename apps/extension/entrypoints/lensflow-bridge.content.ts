@@ -21,7 +21,17 @@ export default defineContentScript({
     const onConnect = (event: MessageEvent) => {
       if (event.source !== window || !allowedOrigin(event.origin)) return;
       const data = event.data as { type?: unknown; nonce?: unknown; version?: unknown };
-      if (data?.type !== CONNECT || data.version !== LENSFLOW_BRIDGE_VERSION || typeof data.nonce !== "string" || data.nonce.length < 16) return;
+      if (data?.type !== CONNECT || typeof data.nonce !== "string" || data.nonce.length < 16) return;
+      if (data.version !== LENSFLOW_BRIDGE_VERSION) {
+        window.postMessage({
+          type: "LENSFLOW_BRIDGE_INCOMPATIBLE",
+          nonce: data.nonce,
+          expectedVersion: LENSFLOW_BRIDGE_VERSION,
+          receivedVersion: data.version,
+          extensionVersion: browser.runtime.getManifest().version
+        }, event.origin);
+        return;
+      }
       const channel = new MessageChannel();
       const port = channel.port1;
       ports.add(port);

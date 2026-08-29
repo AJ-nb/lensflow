@@ -18,9 +18,14 @@ const faq = [
         <span class="eyebrow">LOCAL AI CREATIVE WORKBENCH</span>
         <h1>镜序 Lensflow</h1>
         <p>从网页灵感到可复用创作资产的本地 AI 工作台</p>
-        <div class="hero-actions"><a class="button primary" data-install-cta href={`${base}/download`}>安装 Lensflow</a><a class="button" href="#workflow">查看完整工作流</a></div>
+        <div class="hero-actions"><a class="button primary" data-install-cta data-install-state="checking" aria-busy="true" href={`${base}/download`}>检测中</a><a class="button" href="#workflow">查看完整工作流</a></div>
       </div>
-      <figure class="hero-media"><img src={`${base}/media/studio-overview.webp`} width="1440" height="1024" alt="Lensflow 创作工作台，展示素材、组合、预检和结果卡池" /></figure>
+      <figure class="hero-media">
+        <picture>
+          <source media="(max-width: 600px)" srcset={`${base}/media/studio-mobile.webp`} />
+          <img src={`${base}/media/studio-overview.webp`} width="1440" height="1024" alt="Lensflow 创作工作台，展示本地素材、四步流程和 Provider 状态" />
+        </picture>
+      </figure>
     </section>
 
     <section class="trust-strip" aria-label="产品差异"><div><strong>无需账号</strong><span>安装后即可使用</span></div><div><strong>Key 由你掌控</strong><span>默认只在会话存储</span></div><div><strong>资产保存在本机</strong><span>无云数据库</span></div><div><strong>源码公开</strong><span>MIT，可审查</span></div></section>
@@ -35,39 +40,4 @@ const faq = [
 
     <section class="faq-band"><header><span class="eyebrow">FAQ</span><h2>常见问题</h2></header><div>{faq.map(([question, answer]) => <details><summary>{question}</summary><p>{answer}</p></details>)}</div></section>
   </main>
-  <script is:inline define:vars={{ base }}>
-    const cta = document.querySelector("[data-install-cta]");
-    const nonce = `${crypto.randomUUID()}${crypto.randomUUID()}`;
-    const onBridge = async (event) => {
-      if (event.source !== window || event.origin !== location.origin || event.data?.type !== "LENSFLOW_BRIDGE_CONNECTED" || event.data?.nonce !== nonce) return;
-      window.removeEventListener("message", onBridge);
-      const port = event.ports[0];
-      if (!port || !cta) return;
-      const id = crypto.randomUUID();
-      port.onmessage = async (message) => {
-        if (message.data?.id !== id || !message.data.ok) return;
-        const installed = message.data.data?.extensionVersion || "0.0.0";
-        let latest = installed;
-        try {
-          const response = await fetch(`${base}/latest.json`, { cache: "no-store" });
-          const manifest = await response.json();
-          if (manifest.publishedAt && manifest.version) latest = manifest.version;
-        } catch { /* The local extension is still usable when the release feed is offline. */ }
-        const compare = (left, right) => left.split(/[.-]/).slice(0, 3).map(Number).reduce((result, value, index) => result || value - (right.split(/[.-]/).slice(0, 3).map(Number)[index] || 0), 0);
-        if (compare(latest, installed) > 0) {
-          cta.textContent = `更新至 v${latest}`;
-          cta.href = `${base}/download`;
-        } else {
-          cta.textContent = "进入创作空间";
-          cta.href = `${base}/studio`;
-        }
-        port.close();
-      };
-      port.start();
-      port.postMessage({ version: 1, id, nonce, method: "version.get", timestamp: Date.now() });
-    };
-    window.addEventListener("message", onBridge);
-    window.postMessage({ type: "LENSFLOW_BRIDGE_CONNECT", version: 1, nonce }, location.origin);
-    window.setTimeout(() => window.removeEventListener("message", onBridge), 1500);
-  </script>
 </SiteLayout>

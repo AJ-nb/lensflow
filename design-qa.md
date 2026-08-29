@@ -1,45 +1,38 @@
 # Lensflow Design QA
 
-## Comparison Target
+## Evidence
 
-- Source visual truth: `C:\Users\LENOVO\.codex\generated_images\01a048bd-f9c4-73c0-9ffd-799c790001c8\exec-f55213ee-d817-4d03-8894-98a95a0141e4.png`
-- Implementation: `D:\OneDrive\桌面\工作\lensflow\output\playwright\fan-gallery-1440-final.png`
-- Combined full-view evidence: `D:\OneDrive\桌面\工作\lensflow\output\playwright\design-comparison-results-source-left-implementation-right.png`
-- Focused fan evidence: `D:\OneDrive\桌面\工作\lensflow\output\playwright\design-comparison-results-focus-source-left-implementation-right.png`
-- Viewport: 1440 x 1024 CSS px, device scale factor 1.
-- Source pixels: 1488 x 1058, normalized to 1440 x 1024 with the original aspect ratio preserved.
-- Implementation pixels: 1440 x 1024.
-- State: extension workspace, result step, five children (three ready, one failed, one generating), focused result 2, ready cards revealed.
+- Direction reference: `C:\\Users\\LENOVO\\.codex\\generated_images\\01a048bd-f9c4-73c0-9ffd-799c790001c8\\exec-f55213ee-d817-4d03-8894-98a95a0141e4.png`
+- Fan result state: `D:\\OneDrive\\桌面\\工作\\lensflow\\output\\playwright\\fan-gallery-1440-final.png`
+- Website Studio: `output/playwright/studio-site-1440-latest.png`, `studio-site-1280-latest.png`, `studio-site-390-latest.png`
+- Website home: `output/playwright/home-1440-latest-media.png`, `home-390-latest-media.png`, `home-200-percent-latest.png`
+- Extension: `output/playwright/sidepanel-360-latest.png`, `provider-dialog-latest.png`
 
 ## Findings
 
-No actionable P0, P1, or P2 differences remain.
+No actionable P0, P1, or P2 visual differences remain.
 
-- Fonts and typography: both views use a compact Chinese system sans hierarchy with clear 12-22 px UI levels, stable line heights, zero letter spacing, and no clipped labels. Lensflow intentionally uses its own copy.
-- Spacing and layout rhythm: the implementation follows the required 248 px asset rail, adaptive center, and 320 px inspector. This gives the center more width than the concept image, which is an intentional product constraint. Borders, 6 px maximum radii, and dense vertical rhythm remain coherent.
-- Colors and visual tokens: warm white surfaces, rose actions and focus, graphite text, and teal success states match the selected direction. No gradients are used.
-- Image and asset fidelity: the fan keeps the selected card above adjacent cards and spans the requested approximate +/-24 degree range. QA result images came from the real Lensflow interface in a temporary browser profile; no demo media was added to the product or user asset store. Visible controls use the icon library rather than handcrafted SVG or CSS drawings.
-- Copy and content: all user-facing product text is Lensflow-specific. Legacy `visual-lens-backup` identifiers remain only where required for migration compatibility.
-- Responsive behavior: verified at 1440 x 1024, 1280 x 900, 390 px site width, 360 px extension side panel, and a 720 x 512 effective viewport representing 200% desktop zoom. No overlapping controls were observed.
+- Function: the site exposes the complete public flow while missing or incompatible extensions keep all write actions disabled. Mobile Studio is read-only and omits upload, keyword, Provider, and submit controls.
+- Structure: the desktop workspace preserves the 248 px asset rail, adaptive center, and 320 px inspector. The 360 px extension side panel switches to a single-column flow without horizontal overflow.
+- Human factors: the four-step model is the only workflow stepper. Analysis actions live with the selected asset, Provider secrets live only in the extension dialog, and the fan uses one keyboard focus target with Arrow keys and Enter/Space reveal.
+- Aesthetics: warm white, rose, graphite, and teal remain consistent with direction 3. Key radii stay at or below 6 px, typography uses system Chinese sans fonts, and no gradients or nested cards were introduced.
+- Media: the product site now uses fresh desktop and mobile captures of the real Lensflow empty state. No demo images, templates, or keywords are shipped. Temporary QA result images remain outside the product bundle.
+- Fan: the result state keeps the selected card above adjacent cards and spans approximately -24 to +24 degrees. Reduced motion bypasses dealing and uses a stable revealed grid.
 
-## Interaction Evidence
+## Interaction And Responsive Checks
 
-- Provider dialog receives initial focus, closes with Escape, and restores focus to `Provider 设置`.
-- Fan keyboard navigation moved to result 2 with ArrowRight; Enter revealed it.
-- `揭示全部` revealed all three ready results without changing failed or active children.
-- A Provider with `cancellation: unsupported` displays a disabled `不支持取消` action.
-- Reduced-motion mode rendered all five cards as a stable grid with ready results already revealed.
-- Browser and extension QA runs reported zero console errors.
+- Verified 1440 x 1024, 1280 x 900, 390 x 844, 360 px extension side panel, and 720 x 512 as the 200% zoom equivalent viewport.
+- Website and Studio document widths never exceeded the active viewport in these checks.
+- The mobile header menu is keyboard-addressable, identifies the current route, and leaves the install action visible.
+- The Provider dialog opens with focus on Close, closes with Escape, and returns focus to the exact Provider control that opened it.
+- Website production assets contain no password input, `apiKey` field, Authorization header, or Provider secret form.
+- Browser QA reported zero application console errors. Unit tests passed 118/118 and Playwright passed 12/12.
 
-## Comparison History
+## Resolved Issues
 
-1. P2 focus return: closing the controlled Provider dialog originally left focus on `body`. Added an explicit return-focus ref; post-fix evidence returned focus to the `Provider 设置` button.
-2. P2 capture contamination: Astro's development toolbar overlapped the lower edge of screenshots. Disabled the development toolbar; revised captures contain only Lensflow UI.
-3. P2 capability mismatch: an active batch showed `取消任务` even when the Provider reported cancellation unsupported. The action now renders disabled as `不支持取消`.
-4. State mismatch: the first comparison used the source result state against the implementation composition empty state. A temporary extension-only QA batch produced a matching result state, and the source and implementation were reopened together in the combined full-view and focused comparison images.
-
-## Follow-up Polish
-
-- P3: real generated artwork will make the result fan easier to judge than the temporary Lensflow interface captures once a user configures a Provider. This is intentionally not bundled as demo content.
+1. Replaced stale homepage media that still showed the removed breadcrumb and old quick actions.
+2. Added a dedicated mobile Studio capture so the 390 px hero no longer crops the desktop interface.
+3. Corrected Provider dialog focus restoration when opened from the inspector or preflight instead of the top toolbar.
+4. Added automated overflow checks for 1280 px desktop and the 200% zoom equivalent viewport.
 
 final result: passed

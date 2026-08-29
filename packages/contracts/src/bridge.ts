@@ -17,7 +17,9 @@ export const bridgeMethodSchema = z.enum([
   "task.subscribe",
   "download",
   "backup.open",
-  "capture.open"
+  "capture.open",
+  "provider.open",
+  "analysis.open"
 ]);
 export type BridgeMethod = z.infer<typeof bridgeMethodSchema>;
 
@@ -56,7 +58,9 @@ const bridgePayloadSchemas: Record<BridgeMethod, z.ZodType> = {
   "task.subscribe": emptyPayloadSchema,
   download: z.object({ batchId: z.string().min(1), childId: z.string().min(1).optional() }).strict(),
   "backup.open": emptyPayloadSchema,
-  "capture.open": emptyPayloadSchema
+  "capture.open": emptyPayloadSchema,
+  "provider.open": emptyPayloadSchema,
+  "analysis.open": z.object({ assetId: z.string().min(1).max(160) }).strict()
 };
 
 export function parseBridgePayload(request: BridgeRequest): unknown {

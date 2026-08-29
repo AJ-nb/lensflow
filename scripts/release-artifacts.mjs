@@ -24,6 +24,7 @@ const sha256 = createHash("sha256").update(bytes).digest("hex");
 const repository = process.env.GITHUB_REPOSITORY || "AJ-nb/lensflow";
 const publishedAt = process.env.LENSFLOW_PUBLISHED_AT || new Date().toISOString();
 const manifest = {
+  status: "published",
   version,
   channel: version.includes("-") ? "beta" : "stable",
   publishedAt,

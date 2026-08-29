@@ -83,7 +83,12 @@ export class LensflowDatabase extends Dexie {
   }
 }
 
-export async function readStudioSnapshot(db: LensflowDatabase, connected = true, readOnly = false): Promise<StudioSnapshot> {
+export async function readStudioSnapshot(
+  db: LensflowDatabase,
+  connected = true,
+  readOnly = false,
+  extensionVersion: string | null = null
+): Promise<StudioSnapshot> {
   const [providerMeta, capabilitiesMeta, promptRows, assets, references, batches, historyEvents, estimate] = await Promise.all([
     db.settingsMeta.get("activeProvider"),
     db.settingsMeta.get("providerCapabilities"),
@@ -98,9 +103,12 @@ export async function readStudioSnapshot(db: LensflowDatabase, connected = true,
   ]);
   const persisted = typeof navigator !== "undefined" && navigator.storage?.persisted ? await navigator.storage.persisted() : false;
   return {
+    connectionState: connected ? "connected" : "missing",
     connected,
     readOnly,
     protocolVersion: 1,
+    extensionVersion,
+    connectionMessage: connected ? "本机插件已连接。" : "未检测到本机插件。",
     provider: (providerMeta?.value as ProviderProfile | undefined) ?? null,
     capabilities: (capabilitiesMeta?.value as ProviderCapabilities | undefined) ?? { ...UNKNOWN_CAPABILITIES },
     keywords: promptRows.map((row) => ({ id: row.id, axis: row.axis ?? "style", text: row.text, locked: false, createdAt: row.createdAt })),

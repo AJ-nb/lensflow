@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertTriangle,
   Archive,
@@ -50,9 +51,9 @@ import {
   type StudioRuntime,
   type StudioSnapshot
 } from "@lensflow/contracts";
-import { compilePrompt, drawAxis, drawHand, normalizeReferences } from "@lensflow/core";
+import { compilePrompt, drawAxis, drawHand, normalizeReferences, validateKeywordInput } from "@lensflow/core";
 import { FanGallery } from "./FanGallery";
-import { ProviderDialog } from "./ProviderDialog";
+import type { ProviderDialogProps } from "./ProviderDialog";
 
 export interface StudioAppProps {
   runtime: StudioRuntime;
@@ -60,13 +61,18 @@ export interface StudioAppProps {
   title?: string;
   logoUrl?: string;
   initialView?: "create" | "collection" | "history" | "backup";
+  initialProviderOpen?: boolean;
+  providerDialog?: ComponentType<ProviderDialogProps>;
 }
 
 const EMPTY_HAND: AxisHand = { style: null, subject: null, composition: null, color: null, motion: null };
 const EMPTY_SNAPSHOT: StudioSnapshot = {
+  connectionState: "checking",
   connected: false,
   readOnly: true,
   protocolVersion: 1,
+  extensionVersion: null,
+  connectionMessage: "正在检测本机插件。",
   provider: null,
   capabilities: { ...UNKNOWN_CAPABILITIES },
   keywords: [],
@@ -77,17 +83,18 @@ const EMPTY_SNAPSHOT: StudioSnapshot = {
   storage: null
 };
 
-export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow", logoUrl, initialView = "create" }: StudioAppProps) {
+export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow", logoUrl, initialView = "create", initialProviderOpen = false, providerDialog: ProviderEditor }: StudioAppProps) {
   const [snapshot, setSnapshot] = useState<StudioSnapshot>(EMPTY_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [providerOpen, setProviderOpen] = useState(false);
+  const [providerOpen, setProviderOpen] = useState(initialProviderOpen);
   const [hand, setHand] = useState<AxisHand>(EMPTY_HAND);
   const [tray, setTray] = useState<KeywordCard[]>([]);
   const [body, setBody] = useState("");
   const [newKeyword, setNewKeyword] = useState("");
   const [newAxis, setNewAxis] = useState<AxisName>("style");
   const [showKeywordForm, setShowKeywordForm] = useState(false);
+  const [keywordError, setKeywordError] = useState("");
   const [activeStep, setActiveStep] = useState(1);
   const [settings, setSettings] = useState<GenerationSettings>({ model: "", size: "1024x1024", quality: "medium", count: 4, concurrency: 2 });
   const [submitting, setSubmitting] = useState(false);
@@ -95,7 +102,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
   const [activeSection, setActiveSection] = useState(initialView);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const providerButtonRef = useRef<HTMLButtonElement>(null);
+  const providerReturnRef = useRef<HTMLButtonElement>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -141,17 +148,54 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
 
   const compiledPrompt = useMemo(() => compilePrompt(hand, [tray.map((card) => card.text).join("，"), body].filter(Boolean).join("，")), [body, hand, tray]);
   const latestBatch = snapshot.batches[0] ?? null;
+  const isSite = surface === "site";
+  const writesDisabled = snapshot.readOnly || snapshot.connectionState !== "connected";
 
   const drawOne = (axis: AxisName) => setHand((current) => ({ ...current, [axis]: drawAxis(axis, snapshot.keywords, current[axis]) }));
   const toggleLock = (axis: AxisName) => setHand((current) => current[axis] ? ({ ...current, [axis]: { ...current[axis]!, locked: !current[axis]!.locked } }) : current);
   const addHandToTray = () => setTray((current) => [...new Map([...current, ...AXIS_ORDER.map((axis) => hand[axis]).filter((card): card is KeywordCard => Boolean(card))].map((card) => [card.id, card])).values()]);
 
   const createKeyword = async () => {
-    if (!newKeyword.trim()) return;
-    await runtime.createKeyword({ axis: newAxis, text: newKeyword.trim() });
-    setNewKeyword("");
-    setShowKeywordForm(false);
-    await reload();
+    try {
+      const text = validateKeywordInput(newKeyword, newAxis, snapshot.keywords);
+      await runtime.createKeyword({ axis: newAxis, text });
+      setNewKeyword("");
+      setKeywordError("");
+      setShowKeywordForm(false);
+      await reload();
+    } catch (reason) {
+      setKeywordError(reason instanceof Error ? reason.message : "关键词保存失败。");
+    }
+  };
+
+  const openKeywordDialog = () => {
+    if (writesDisabled) return;
+    setKeywordError("");
+    setShowKeywordForm(true);
+  };
+
+  const openProvider = async (trigger?: HTMLButtonElement) => {
+    if (trigger) providerReturnRef.current = trigger;
+    setError("");
+    if (!isSite) {
+      setProviderOpen(true);
+      return;
+    }
+    try { await runtime.openProviderSettings(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法打开插件 Provider 设置。"); }
+  };
+
+  const openAnalysis = async () => {
+    if (!selectedAssetId || writesDisabled) return;
+    try { await runtime.openAnalysis(selectedAssetId); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法打开图像解构。"); }
+  };
+
+  const canOpenStep = (step: number) => {
+    if (snapshot.readOnly) return true;
+    if (step <= 2) return true;
+    if (step === 3) return Boolean(compiledPrompt);
+    return Boolean(latestBatch);
   };
 
   const createBatch = async () => {
@@ -207,17 +251,22 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
       <header className="lf-topbar">
         <div className="lf-brand"><span className="lf-brand-mark">{logoUrl ? <img src={logoUrl} alt="" /> : <Boxes size={22} />}</span><strong>{title}</strong></div>
         {surface !== "sidepanel" && <div className="lf-project"><span>人像创作</span><small>本地工作区</small></div>}
-        <div className={`lf-connection ${snapshot.connected ? "is-online" : ""}`}><CircleDot size={14} />{snapshot.connected ? "本机插件在线" : "等待本机插件"}</div>
+        <div className={`lf-connection state-${snapshot.connectionState} ${snapshot.connected ? "is-online" : ""}`}><CircleDot size={14} />{connectionLabel(snapshot.connectionState)}</div>
         <nav className="lf-topnav" aria-label="工作区">
           <button className={activeSection === "create" ? "is-active" : ""} onClick={() => setActiveSection("create")}>创作</button>
           <button className={activeSection === "collection" ? "is-active" : ""} onClick={() => setActiveSection("collection")}>收藏</button>
           <button className={activeSection === "history" ? "is-active" : ""} onClick={() => setActiveSection("history")}>历史</button>
         </nav>
-        <button ref={providerButtonRef} className="lf-icon-button" type="button" onClick={() => setProviderOpen(true)} aria-label="Provider 设置"><Settings size={19} /></button>
+        <button className="lf-icon-button lf-provider-trigger" type="button" onClick={(event) => void openProvider(event.currentTarget)} aria-label="Provider 设置"><Settings size={19} /></button>
       </header>
 
-      {!snapshot.connected && surface === "site" && (
-        <div className="lf-bridge-notice"><CloudOff size={17} /><span>浏览模式：安装并连接 Lensflow 插件后才能生成、写入资产和同步任务。</span><a href="/lensflow/download">安装插件</a></div>
+      {snapshot.connectionState !== "connected" && surface === "site" && (
+        <div className={`lf-bridge-notice state-${snapshot.connectionState}`}>
+          {snapshot.connectionState === "checking" ? <RefreshCw className="is-spinning" size={17} /> : snapshot.connectionState === "incompatible" ? <AlertTriangle size={17} /> : <CloudOff size={17} />}
+          <span>{snapshot.connectionMessage || "安装并连接 Lensflow 插件后才能生成、写入资产和同步任务。"}</span>
+          <a href="/lensflow/download">{snapshot.connectionState === "incompatible" ? "更新插件" : "安装插件"}</a>
+          <button type="button" onClick={() => { setLoading(true); void reload(); }}><RefreshCw size={14} />重新检测</button>
+        </div>
       )}
       {surface === "site" && <div className="lf-mobile-readonly"><AlertTriangle size={16} /><span>移动端仅提供只读预览；完整创作请使用桌面 Chrome 与 Lensflow 插件。</span></div>}
 
@@ -228,12 +277,11 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
             <div className="lf-library-tools"><label className="lf-search"><Search size={15} /><input placeholder="搜索本地资产" /></label><button className="lf-icon-button" aria-label="筛选"><PanelRight size={16} /></button></div>
             <Tabs.Content value="assets">
               <div className="lf-quick-actions">
-                <button onClick={() => void runtime.openCapture()}><FileImage size={18} /><span>网页捕捉</span></button>
-                <button onClick={() => uploadInputRef.current?.click()}><Upload size={18} /><span>上传图片</span></button>
-                <button><WandSparkles size={18} /><span>图像解构</span></button>
-                <button onClick={() => void runtime.openLegacyWorkbench?.()}><Sparkles size={18} /><span>深度分析</span></button>
+                <button className="lf-write-action" disabled={writesDisabled} title={writesDisabled ? "连接桌面插件后可用" : undefined} onClick={() => void runtime.openCapture()}><FileImage size={18} /><span>网页捕捉</span></button>
+                <button className="lf-write-action" disabled={writesDisabled} title={writesDisabled ? "连接桌面插件后可用" : undefined} onClick={() => uploadInputRef.current?.click()}><Upload size={18} /><span>上传图片</span></button>
               </div>
               <AssetList snapshot={snapshot} kind="capture" selectedId={selectedAssetId} onSelect={setSelectedAssetId} />
+              {selectedAssetId && <div className="lf-selected-actions"><strong>选中素材操作</strong><button disabled={writesDisabled} onClick={() => void openAnalysis()}><WandSparkles size={16} />图像解构</button><button disabled={writesDisabled} onClick={() => void openAnalysis()}><Sparkles size={16} />深度分析</button></div>}
             </Tabs.Content>
             <Tabs.Content value="prompts"><KeywordLibrary keywords={snapshot.keywords} onDelete={async (id) => { await runtime.deleteKeyword(id); await reload(); }} /></Tabs.Content>
             <Tabs.Content value="references"><AssetList snapshot={snapshot} kind="reference" /></Tabs.Content>
@@ -247,9 +295,8 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
 
         <main className="lf-main" id="create">
           {activeSection === "create" && <>
-          <div className="lf-flow-title"><span>捕捉与解构</span><ChevronRight size={16} /><span>组合与生成</span><ChevronRight size={16} /><span>资产与复用</span></div>
           <div className="lf-stepper" aria-label="创作步骤">
-            {["素材", "组合", "预检", "结果"].map((label, index) => <button key={label} className={activeStep === index + 1 ? "is-active" : activeStep > index + 1 ? "is-complete" : ""} onClick={() => setActiveStep(index + 1)}><span>{activeStep > index + 1 ? <Check size={14} /> : index + 1}</span>{label}</button>)}
+            {["素材", "组合", "预检", "结果"].map((label, index) => { const step = index + 1; const reachable = canOpenStep(step); return <button key={label} disabled={!reachable} aria-current={activeStep === step ? "step" : undefined} className={activeStep === step ? "is-active" : activeStep > step ? "is-complete" : ""} onClick={() => setActiveStep(step)}><span>{activeStep > step ? <Check size={14} /> : step}</span>{label}</button>; })}
           </div>
 
           {loading ? <div className="lf-empty"><RefreshCw className="is-spinning" /><strong>正在读取本地工作区</strong></div> : null}
@@ -261,7 +308,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
                   <div className="lf-empty-icon"><ImagePlus size={26} /></div>
                   <h2>本机还没有创作素材</h2>
                   <p>Lensflow 不内置演示素材。捕捉网页图片、上传自己的图片，或先创建关键词。</p>
-                  <div><button className="lf-button is-primary" onClick={() => void runtime.openCapture()}><FileImage size={16} />去网页捕捉</button><button className="lf-button" onClick={() => uploadInputRef.current?.click()}><Upload size={16} />上传并解构</button><button className="lf-button" onClick={() => setShowKeywordForm(true)}><Plus size={16} />创建关键词</button></div>
+                  <div className="lf-write-actions"><button className="lf-button is-primary" disabled={writesDisabled} onClick={() => void runtime.openCapture()}><FileImage size={16} />去网页捕捉</button><button className="lf-button" disabled={writesDisabled} onClick={() => uploadInputRef.current?.click()}><Upload size={16} />上传并解构</button><button className="lf-button" disabled={writesDisabled} onClick={openKeywordDialog}><Plus size={16} />创建关键词</button></div>
                 </div>
               ) : <AssetList snapshot={snapshot} selectedId={selectedAssetId} onSelect={setSelectedAssetId} />}
               <div className="lf-stage-footer"><span>选择素材后进入组合，也可以直接从文字开始。</span><button className="lf-button is-primary" onClick={() => setActiveStep(2)}>进入组合<ChevronRight size={16} /></button></div>
@@ -270,9 +317,9 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
 
           {!loading && activeStep === 2 && (
             <section className="lf-stage lf-composer">
-              <div className="lf-section-heading"><div><span className="lf-kicker">五轴抽卡</span><h1>把灵感组合成可控提示词</h1></div><button className="lf-button" disabled={!snapshot.keywords.length} onClick={() => setHand((current) => drawHand(snapshot.keywords, current))}><Shuffle size={16} />全部重抽</button></div>
+              <div className="lf-section-heading"><div><span className="lf-kicker">五轴抽卡</span><h1>把灵感组合成可控提示词</h1></div><div className="lf-heading-actions"><button className="lf-button" disabled={writesDisabled} onClick={openKeywordDialog}><Plus size={16} />新增关键词</button><button className="lf-button" disabled={!snapshot.keywords.length} onClick={() => setHand((current) => drawHand(snapshot.keywords, current))}><Shuffle size={16} />全部重抽</button></div></div>
               {snapshot.keywords.length === 0 ? (
-                <div className="lf-inline-empty"><Library size={20} /><span>关键词库为空。先从网页收藏文字、图片解构结果或手动输入创建。</span><button onClick={() => setShowKeywordForm(true)}>创建第一个关键词</button></div>
+                <div className="lf-inline-empty"><Library size={20} /><span>关键词库为空。先从网页收藏文字、图片解构结果或手动输入创建。</span><button disabled={writesDisabled} onClick={openKeywordDialog}>创建第一个关键词</button></div>
               ) : (
                 <div className="lf-axis-grid">{AXIS_ORDER.map((axis) => <AxisCard key={axis} axis={axis} card={hand[axis]} onDraw={() => drawOne(axis)} onLock={() => toggleLock(axis)} />)}</div>
               )}
@@ -286,7 +333,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
           )}
 
           {!loading && activeStep === 3 && (
-            <Preflight snapshot={snapshot} settings={settings} setSettings={setSettings} prompt={compiledPrompt} onConfigure={() => setProviderOpen(true)} onBack={() => setActiveStep(2)} onSubmit={() => void createBatch()} submitting={submitting} />
+            <Preflight snapshot={snapshot} settings={settings} setSettings={setSettings} prompt={compiledPrompt} onConfigure={(trigger) => void openProvider(trigger)} onBack={() => setActiveStep(2)} onSubmit={() => void createBatch()} submitting={submitting} />
           )}
 
           {!loading && activeStep === 4 && (
@@ -299,6 +346,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
               onEagle={runtime.exportToEagle ? async (child) => { const result = await runtime.exportToEagle!(latestBatch.id, child.id); return `${result.libraryName} · ${result.itemCount} 项 · ${result.tags.length} 个标签已回读`; } : undefined}
               onCancel={async () => { await runtime.cancelBatch(latestBatch.id); await reload(); }}
               canCancel={snapshot.capabilities.cancellation === "supported"}
+              logoUrl={logoUrl}
             />
               : <div className="lf-empty-state"><FolderHeart size={28} /><h2>还没有生成结果</h2><p>完成组合和预检后，结果会以卡池形式保存在本次会话画架。</p><button className="lf-button is-primary" onClick={() => setActiveStep(2)}>开始组合</button></div>
           )}
@@ -312,7 +360,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
         <aside className="lf-inspector" aria-label="上下文检查器">
           <Tabs.Root defaultValue="provider">
             <Tabs.List className="lf-tabs"><Tabs.Trigger value="work">作品</Tabs.Trigger><Tabs.Trigger value="tasks">任务</Tabs.Trigger><Tabs.Trigger value="provider">Provider</Tabs.Trigger><Tabs.Trigger value="sync">同步</Tabs.Trigger></Tabs.List>
-            <Tabs.Content value="provider"><InspectorProvider snapshot={snapshot} onConfigure={() => setProviderOpen(true)} /></Tabs.Content>
+            <Tabs.Content value="provider"><InspectorProvider snapshot={snapshot} onConfigure={(trigger) => void openProvider(trigger)} /></Tabs.Content>
             <Tabs.Content value="tasks"><InspectorTasks batches={snapshot.batches} /></Tabs.Content>
             <Tabs.Content value="work"><InspectorWorks snapshot={snapshot} /></Tabs.Content>
             <Tabs.Content value="sync"><InspectorSync snapshot={snapshot} /></Tabs.Content>
@@ -320,9 +368,11 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
         </aside>
       </div>
 
-      {showKeywordForm && <div className="lf-popover-form"><div><strong>创建关键词</strong><button className="lf-icon-button" onClick={() => setShowKeywordForm(false)}><X size={16} /></button></div><select value={newAxis} onChange={(event) => setNewAxis(event.target.value as AxisName)}>{AXIS_ORDER.map((axis) => <option value={axis} key={axis}>{AXIS_LABELS[axis]}</option>)}</select><input autoFocus value={newKeyword} onChange={(event) => setNewKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void createKeyword(); }} placeholder="输入自己的关键词" /><button className="lf-button is-primary" onClick={() => void createKeyword()}>保存到关键词库</button></div>}
+      <Dialog.Root open={showKeywordForm} onOpenChange={(open) => { setShowKeywordForm(open); if (!open) setKeywordError(""); }}>
+        <Dialog.Portal><Dialog.Overlay className="lf-dialog-overlay" /><Dialog.Content className="lf-dialog-content lf-keyword-dialog" aria-describedby="keyword-description"><div className="lf-dialog-titlebar"><div><span className="lf-kicker">用户关键词库</span><Dialog.Title>创建关键词</Dialog.Title></div><Dialog.Close className="lf-icon-button" aria-label="关闭创建关键词"><X size={18} /></Dialog.Close></div><Dialog.Description id="keyword-description">关键词只保存在本机，并用于五轴抽卡和提示词组合。</Dialog.Description><label className="lf-field"><span>所属轴</span><select value={newAxis} onChange={(event) => { setNewAxis(event.target.value as AxisName); setKeywordError(""); }}>{AXIS_ORDER.map((axis) => <option value={axis} key={axis}>{AXIS_LABELS[axis]}</option>)}</select></label><label className="lf-field"><span>关键词</span><input autoFocus value={newKeyword} onChange={(event) => { setNewKeyword(event.target.value); setKeywordError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void createKeyword(); } }} placeholder="输入自己的关键词" maxLength={240} /></label>{keywordError && <p className="lf-inline-status is-warning" role="alert"><AlertTriangle size={15} />{keywordError}</p>}<div className="lf-dialog-actions"><Dialog.Close className="lf-button">取消</Dialog.Close><button className="lf-button is-primary" disabled={!newKeyword.trim()} onClick={() => void createKeyword()}>保存到关键词库</button></div></Dialog.Content></Dialog.Portal>
+      </Dialog.Root>
       <input ref={uploadInputRef} type="file" accept="image/*" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importCapture(file); event.currentTarget.value = ""; }} />
-      <ProviderDialog runtime={runtime} provider={snapshot.provider} open={providerOpen} onOpenChange={setProviderOpen} onSaved={reload} returnFocusRef={providerButtonRef} />
+      {!isSite && ProviderEditor && <ProviderEditor runtime={runtime} provider={snapshot.provider} open={providerOpen} onOpenChange={setProviderOpen} onSaved={reload} returnFocusRef={providerReturnRef} />}
     </div>
   );
 }
@@ -462,7 +512,17 @@ function StorageMeter({ snapshot }: { snapshot: StudioSnapshot }) {
 
 function formatBytes(bytes: number) { return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`; }
 
-function Preflight({ snapshot, settings, setSettings, prompt, onConfigure, onBack, onSubmit, submitting }: { snapshot: StudioSnapshot; settings: GenerationSettings; setSettings: React.Dispatch<React.SetStateAction<GenerationSettings>>; prompt: string; onConfigure: () => void; onBack: () => void; onSubmit: () => void; submitting: boolean }) {
+function connectionLabel(state: StudioSnapshot["connectionState"]): string {
+  return ({
+    checking: "正在检测插件",
+    connected: "本机插件在线",
+    missing: "未检测到插件",
+    incompatible: "插件需要更新",
+    error: "连接异常"
+  } as const)[state];
+}
+
+function Preflight({ snapshot, settings, setSettings, prompt, onConfigure, onBack, onSubmit, submitting }: { snapshot: StudioSnapshot; settings: GenerationSettings; setSettings: React.Dispatch<React.SetStateAction<GenerationSettings>>; prompt: string; onConfigure: (trigger: HTMLButtonElement) => void; onBack: () => void; onSubmit: () => void; submitting: boolean }) {
   const caps = snapshot.capabilities;
   const references = normalizeReferences(snapshot.references);
   const referencesBlocked = references.length > 0 && caps.imageEditing !== "supported";
@@ -481,7 +541,7 @@ function Preflight({ snapshot, settings, setSettings, prompt, onConfigure, onBac
         </div>
         <div className="lf-preflight-references"><strong>参考关系</strong>{references.length ? references.map((reference, index) => <div key={reference.id}><span>{index + 1}. {referenceLabel(reference.kind)}</span><b>{reference.name}</b><small>{reference.kind === "face" ? "只约束身份" : reference.kind === "pose" ? "只约束动作/位置/透视/受力" : reference.kind === "palette" ? "整批色彩" : "主体视觉"}</small></div>) : <p>本批次不发送参考图片。</p>}</div>
       </div>
-      <div className="lf-capabilities"><strong>能力状态</strong>{Object.entries({ "鉴权": caps.authentication, "图像输入": caps.visionInput, "结构化输出": caps.structuredOutputs, "图片生成": caps.imageGeneration, "图片编辑": caps.imageEditing, "后台任务": caps.backgroundTasks }).map(([label, state]) => <div key={label}><span>{label}</span><em className={`state-${state}`}>{state}</em></div>)}<button onClick={onConfigure}>打开 Provider 设置</button></div>
+      <div className="lf-capabilities"><strong>能力状态</strong>{Object.entries({ "鉴权": caps.authentication, "图像输入": caps.visionInput, "结构化输出": caps.structuredOutputs, "图片生成": caps.imageGeneration, "图片编辑": caps.imageEditing, "后台任务": caps.backgroundTasks }).map(([label, state]) => <div key={label}><span>{label}</span><em className={`state-${state}`}>{state}</em></div>)}<button onClick={(event) => onConfigure(event.currentTarget)}>打开 Provider 设置</button></div>
     </div>
     {referencesBlocked && <div className="lf-request-summary is-blocked"><AlertTriangle size={15} /><span>参考图片需要已验证的图片编辑能力；当前提交已阻断。</span></div>}
     <div className="lf-request-summary"><Lock size={15} /><span>将产生最多 {settings.count} 次{references.length ? "编辑" : "生成"}请求；超时、429、5xx 或 Schema 失败均不会自动重新付费请求。</span></div>
@@ -489,8 +549,8 @@ function Preflight({ snapshot, settings, setSettings, prompt, onConfigure, onBac
   </section>;
 }
 
-function InspectorProvider({ snapshot, onConfigure }: { snapshot: StudioSnapshot; onConfigure: () => void }) {
-  return <div className="lf-inspector-content"><div className="lf-inspector-status"><span className={snapshot.provider ? "is-ok" : ""}><CircleDot size={18} /></span><div><strong>{snapshot.provider ? snapshot.provider.name : "尚未配置 Provider"}</strong><small>{snapshot.provider?.baseUrl || "密钥由插件隔离保存"}</small></div></div><dl><div><dt>协议版本</dt><dd>v{snapshot.protocolVersion}</dd></div><div><dt>分析模型</dt><dd>{snapshot.provider?.analysisModel || "未选择"}</dd></div><div><dt>图片模型</dt><dd>{snapshot.provider?.imageModel || "未选择"}</dd></div><div><dt>写入状态</dt><dd>{snapshot.readOnly ? "只读" : "可写"}</dd></div></dl><button className="lf-button is-primary" onClick={onConfigure}><Settings size={16} />配置 Provider</button></div>;
+function InspectorProvider({ snapshot, onConfigure }: { snapshot: StudioSnapshot; onConfigure: (trigger: HTMLButtonElement) => void }) {
+  return <div className="lf-inspector-content"><div className="lf-inspector-status"><span className={snapshot.provider ? "is-ok" : ""}><CircleDot size={18} /></span><div><strong>{snapshot.provider ? snapshot.provider.name : "尚未配置 Provider"}</strong><small>{snapshot.provider?.baseUrl || "密钥由插件隔离保存"}</small></div></div><dl><div><dt>协议版本</dt><dd>v{snapshot.protocolVersion}</dd></div><div><dt>分析模型</dt><dd>{snapshot.provider?.analysisModel || "未选择"}</dd></div><div><dt>图片模型</dt><dd>{snapshot.provider?.imageModel || "未选择"}</dd></div><div><dt>写入状态</dt><dd>{snapshot.readOnly ? "只读" : "可写"}</dd></div></dl><button className="lf-button is-primary" onClick={(event) => onConfigure(event.currentTarget)}><Settings size={16} />配置 Provider</button></div>;
 }
 
 function InspectorTasks({ batches }: { batches: GenerationBatch[] }) { return <div className="lf-inspector-content"><div className="lf-panel-heading"><strong>最近任务</strong><small>{batches.length} 个批次</small></div><div className="lf-event-list">{batches.length ? batches.slice(0, 8).map((batch) => { const progress = Math.round(batch.children.reduce((total, child) => total + (child.state === "ready" ? 1 : child.progress ?? 0), 0) / Math.max(1, batch.children.length) * 100); return <div key={batch.id}><span className={`state-${batch.state}`} /><div><strong>{batch.state}</strong><small>{batch.children.filter((child) => child.state === "ready").length}/{batch.children.length} 已完成 · {progress}%</small><span className="lf-task-progress"><i style={{ width: `${progress}%` }} /></span></div></div>; }) : <p>暂无生成任务</p>}</div></div>; }

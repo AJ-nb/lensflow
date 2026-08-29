@@ -12,36 +12,40 @@ import {
   type EagleWorkExportResult,
   type ModelDescriptor,
   type ProviderCapabilities,
+  type ProviderConnectionResult,
   type ProviderProfile,
   type ReferenceKind,
   type StudioReference
 } from "@lensflow/contracts";
 import {
   LensflowDatabase,
+  MODEL_CATALOG_CACHE_TTL_MS,
   BridgeReplayGuard,
   ComfyUIAdapter,
   aggregateBatchState,
   createProviderAdapter,
   dataUrlToBlob,
   normalizeReferences,
+  isModelCatalogCacheFresh,
   readStudioSnapshot,
   redactSensitive,
   recordHistory,
   retryFailedChildren,
+  validateKeywordInput,
   writeSetting
 } from "@lensflow/core";
 import type { RuntimeRequest } from "../shared/types";
+import { STORAGE_KEYS } from "../shared/storage";
 import { ChromeProviderSecretStore } from "./secret-store";
 
 const db = new LensflowDatabase();
 const secrets = new ChromeProviderSecretStore();
 const bridgeReplayGuard = new BridgeReplayGuard();
-const CACHE_TTL = 24 * 60 * 60 * 1000;
 
 export async function handleLensflowRequest(request: RuntimeRequest): Promise<unknown> {
   switch (request.type) {
     case "LENSFLOW_SNAPSHOT":
-      return readStudioSnapshot(db);
+      return readStudioSnapshot(db, true, false, browser.runtime.getManifest().version);
     case "LENSFLOW_SAVE_PROVIDER":
       return saveProvider(request.profile, request.secret);
     case "LENSFLOW_LIST_MODELS":
@@ -79,6 +83,8 @@ export async function handleLensflowRequest(request: RuntimeRequest): Promise<un
     case "LENSFLOW_OPEN_WORKSPACE":
       await openWorkspace(request.hash);
       return null;
+    case "LENSFLOW_OPEN_ANALYSIS":
+      return openAnalysis(request.assetId);
     case "LENSFLOW_BRIDGE_RPC":
       return handleBridgeRequest(request.request);
     default:
@@ -132,22 +138,28 @@ async function providerSecret(providerId: string): Promise<string> {
 async function listModels(providerId: string, refresh = false): Promise<ModelDescriptor[]> {
   const cacheKey = `modelCache:${providerId}`;
   const cached = await db.settingsMeta.get(cacheKey);
-  const cachedValue = cached?.value as { expiresAt?: number; models?: ModelDescriptor[] } | undefined;
-  if (!refresh && cachedValue?.expiresAt && cachedValue.expiresAt > Date.now() && Array.isArray(cachedValue.models)) {
+  const cachedValue = cached?.value as { cachedAt?: number; expiresAt?: number; models?: ModelDescriptor[] } | undefined;
+  if (!refresh && isModelCatalogCacheFresh(cachedValue)) {
     return cachedValue.models;
   }
   const profile = await activeProvider(providerId);
   const secret = profile.kind === "comfyui" ? "" : await providerSecret(providerId);
   const models = await createProviderAdapter(profile).listModels(profile, secret);
-  await writeSetting(db, cacheKey, { expiresAt: Date.now() + CACHE_TTL, models });
+  await cacheModels(providerId, models);
   return models;
 }
 
-async function testProvider(providerId: string): Promise<{ latencyMs: number; modelCount: number }> {
+async function testProvider(providerId: string): Promise<ProviderConnectionResult> {
   const profile = await activeProvider(providerId);
   const secret = profile.kind === "comfyui" ? "" : await providerSecret(providerId);
   const result = await createProviderAdapter(profile).testConnection(profile, secret);
-  return { latencyMs: result.latencyMs, modelCount: result.models.length };
+  await cacheModels(providerId, result.models);
+  return result;
+}
+
+async function cacheModels(providerId: string, models: ModelDescriptor[]): Promise<void> {
+  const cachedAt = Date.now();
+  await writeSetting(db, `modelCache:${providerId}`, { cachedAt, expiresAt: cachedAt + MODEL_CATALOG_CACHE_TTL_MS, models });
 }
 
 async function probeProvider(providerId: string): Promise<ProviderCapabilities> {
@@ -160,8 +172,14 @@ async function probeProvider(providerId: string): Promise<ProviderCapabilities> 
 }
 
 async function createKeyword(axis: "style" | "subject" | "composition" | "color" | "motion", text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) throw new Error("关键词不能为空。");
+  const existing = await db.prompts.where("kind").equals("keyword").toArray();
+  const trimmed = validateKeywordInput(text, axis, existing.map((row) => ({
+    id: row.id,
+    axis: row.axis ?? "style",
+    text: row.text,
+    locked: false,
+    createdAt: row.createdAt
+  })));
   const now = new Date().toISOString();
   const row = { id: crypto.randomUUID(), axis, text: trimmed, kind: "keyword" as const, createdAt: now, updatedAt: now };
   await db.prompts.add(row);
@@ -454,6 +472,22 @@ function safeEagleTag(value: string): string {
   return value.replace(/[\\/]+/g, "-").trim() || "未指定";
 }
 
+async function openAnalysis(assetId: string): Promise<void> {
+  const asset = await db.assets.get(assetId);
+  const dataUrl = asset?.dataUrl || asset?.previewUrl;
+  if (!asset || !dataUrl) throw new Error("所选素材不存在或没有可分析的图片数据。");
+  await browser.storage.session.set({
+    [STORAGE_KEYS.selection]: {
+      id: asset.id,
+      kind: "upload",
+      dataUrl,
+      fileName: asset.name
+    }
+  });
+  await browser.storage.session.remove([STORAGE_KEYS.references, STORAGE_KEYS.overview, STORAGE_KEYS.result]);
+  await openWorkspace("#legacy");
+}
+
 async function openWorkspace(hash = ""): Promise<void> {
   await browser.tabs.create({ url: browser.runtime.getURL(`/workspace.html${hash}`) });
 }
@@ -472,7 +506,7 @@ async function routeBridgeMethod(request: BridgeRequest, payload: unknown): Prom
     case "version.get":
       return { version: LENSFLOW_BRIDGE_VERSION, extensionVersion: browser.runtime.getManifest().version };
     case "snapshot.get":
-      return readStudioSnapshot(db);
+      return readStudioSnapshot(db, true, false, browser.runtime.getManifest().version);
     case "task.create":
       return createBatch(payload as Parameters<typeof createBatch>[0]);
     case "task.cancel":
@@ -544,6 +578,10 @@ async function routeBridgeMethod(request: BridgeRequest, payload: unknown): Prom
       return openWorkspace("#backup");
     case "capture.open":
       return openWorkspace("#capture");
+    case "provider.open":
+      return openWorkspace("#provider");
+    case "analysis.open":
+      return openAnalysis((payload as { assetId: string }).assetId);
     case "task.subscribe":
       return { subscribed: true };
   }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ModelDescriptor, ProviderCapabilities, ProviderProfile } from "./provider";
+import type { ModelDescriptor, ProviderCapabilities, ProviderConnectionResult, ProviderProfile } from "./provider";
 import type {
   BackupExport,
   BackupImportMode,
@@ -132,9 +132,12 @@ export const historyEventSchema = z.object({
 export type HistoryEvent = z.infer<typeof historyEventSchema>;
 
 export interface StudioSnapshot {
+  connectionState: "checking" | "connected" | "missing" | "incompatible" | "error";
   connected: boolean;
   readOnly: boolean;
   protocolVersion: number;
+  extensionVersion: string | null;
+  connectionMessage: string | null;
   provider: ProviderProfile | null;
   capabilities: ProviderCapabilities;
   keywords: KeywordCard[];
@@ -170,7 +173,7 @@ export interface StudioRuntime {
   deleteReference?(id: string): Promise<void>;
   saveProvider(profile: ProviderProfile, secret?: string): Promise<ProviderProfile>;
   listModels(providerId: string, refresh?: boolean): Promise<ModelDescriptor[]>;
-  testConnection(providerId: string): Promise<{ latencyMs: number; modelCount: number }>;
+  testConnection(providerId: string): Promise<ProviderConnectionResult>;
   probeCapabilities(providerId: string): Promise<ProviderCapabilities>;
   createBatch(input: BatchCreateInput): Promise<GenerationBatch>;
   retryFailed(batchId: string): Promise<GenerationBatch>;
@@ -180,6 +183,8 @@ export interface StudioRuntime {
   exportToEagle?(batchId: string, childId: string): Promise<EagleWorkExportResult>;
   openCapture(): Promise<void>;
   openBackup(): Promise<void>;
+  openProviderSettings(): Promise<void>;
+  openAnalysis(assetId: string): Promise<void>;
   openLegacyWorkbench?(): Promise<void>;
   importCapture?(input: { name: string; dataUrl: string; mimeType: string; size: number }): Promise<AssetRecord>;
   exportBackup?(): Promise<BackupExport>;

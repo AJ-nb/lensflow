@@ -5,6 +5,7 @@ import type {
   BatchCreateInput,
   GenerationBatch,
   ProviderProfile,
+  ProviderConnectionResult,
   StudioSnapshot
 } from "@lensflow/contracts";
 
@@ -374,9 +375,10 @@ export type RuntimeRequest =
   | { type: "LENSFLOW_DOWNLOAD"; batchId: string; childId?: string }
   | { type: "LENSFLOW_EXPORT_EAGLE"; batchId: string; childId: string }
   | { type: "LENSFLOW_OPEN_WORKSPACE"; hash?: string }
+  | { type: "LENSFLOW_OPEN_ANALYSIS"; assetId: string }
   | { type: "LENSFLOW_BRIDGE_RPC"; request: unknown };
 
-export type LensflowRuntimeData = StudioSnapshot | GenerationBatch | ProviderProfile | unknown;
+export type LensflowRuntimeData = StudioSnapshot | GenerationBatch | ProviderProfile | ProviderConnectionResult | unknown;
 
 export type RuntimeResponse<T = unknown> =
   | { ok: true; data: T }

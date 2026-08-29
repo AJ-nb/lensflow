@@ -8,6 +8,7 @@ import {
   type GenerationBatch,
   type KeywordCard,
   type ProviderCapabilities,
+  type ProviderConnectionResult,
   type ProviderProfile,
   type ReferenceKind,
   type StudioReference,
@@ -17,9 +18,12 @@ import {
 import { measureImageDataUrl } from "@lensflow/core";
 
 const EMPTY: StudioSnapshot = {
+  connectionState: "checking",
   connected: false,
   readOnly: true,
   protocolVersion: LENSFLOW_BRIDGE_VERSION,
+  extensionVersion: null,
+  connectionMessage: "正在检测本机插件。",
   provider: null,
   capabilities: { ...UNKNOWN_CAPABILITIES },
   keywords: [],
@@ -29,6 +33,16 @@ const EMPTY: StudioSnapshot = {
   historyEvents: [],
   storage: null
 };
+
+class BridgeConnectionError extends Error {
+  constructor(
+    message: string,
+    readonly state: "missing" | "incompatible" | "error",
+    readonly extensionVersion: string | null = null
+  ) {
+    super(message);
+  }
+}
 
 export class BridgeStudioRuntime implements StudioRuntime {
   private port?: MessagePort;
@@ -41,14 +55,26 @@ export class BridgeStudioRuntime implements StudioRuntime {
     if (this.connecting) return this.connecting;
     this.connecting = new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => {
-        window.removeEventListener("message", onConnected);
+        window.removeEventListener("message", onBridgeEvent);
         this.connecting = undefined;
-        reject(new Error("未检测到 Lensflow 插件。"));
+        reject(new BridgeConnectionError("未检测到 Lensflow 插件。请安装后重新检测。", "missing"));
       }, 900);
-      const onConnected = (event: MessageEvent) => {
-        if (event.source !== window || event.data?.type !== "LENSFLOW_BRIDGE_CONNECTED" || event.data?.nonce !== this.nonce || !event.ports[0]) return;
+      const onBridgeEvent = (event: MessageEvent) => {
+        if (event.source !== window || event.origin !== location.origin || event.data?.nonce !== this.nonce) return;
+        if (event.data?.type === "LENSFLOW_BRIDGE_INCOMPATIBLE") {
+          window.clearTimeout(timer);
+          window.removeEventListener("message", onBridgeEvent);
+          this.connecting = undefined;
+          reject(new BridgeConnectionError(
+            `插件桥接协议不兼容：网页使用 v${LENSFLOW_BRIDGE_VERSION}，当前插件支持 v${String(event.data?.expectedVersion ?? "未知")}。`,
+            "incompatible",
+            typeof event.data?.extensionVersion === "string" ? event.data.extensionVersion : null
+          ));
+          return;
+        }
+        if (event.data?.type !== "LENSFLOW_BRIDGE_CONNECTED" || !event.ports[0]) return;
         window.clearTimeout(timer);
-        window.removeEventListener("message", onConnected);
+        window.removeEventListener("message", onBridgeEvent);
         this.port = event.ports[0];
         this.port.start();
         this.port.addEventListener("message", (message) => {
@@ -56,7 +82,7 @@ export class BridgeStudioRuntime implements StudioRuntime {
         });
         resolve(this.port);
       };
-      window.addEventListener("message", onConnected);
+      window.addEventListener("message", onBridgeEvent);
       window.postMessage({ type: "LENSFLOW_BRIDGE_CONNECT", nonce: this.nonce, version: LENSFLOW_BRIDGE_VERSION }, location.origin);
     });
     return this.connecting;
@@ -88,9 +114,16 @@ export class BridgeStudioRuntime implements StudioRuntime {
   async load(): Promise<StudioSnapshot> {
     try {
       const snapshot = await this.rpc<StudioSnapshot>("snapshot.get");
-      return { ...snapshot, connected: true };
-    } catch {
-      return EMPTY;
+      const mobileReadOnly = window.matchMedia("(max-width: 760px)").matches;
+      return { ...snapshot, connectionState: "connected", connected: true, readOnly: mobileReadOnly, connectionMessage: mobileReadOnly ? "插件已连接；移动端保持只读。" : "网页与本机插件已连接。" };
+    } catch (reason) {
+      const state = reason instanceof BridgeConnectionError ? reason.state : "error";
+      return {
+        ...EMPTY,
+        connectionState: state,
+        extensionVersion: reason instanceof BridgeConnectionError ? reason.extensionVersion : null,
+        connectionMessage: reason instanceof Error ? reason.message : "插件桥接发生未知错误。"
+      };
     }
   }
 
@@ -113,7 +146,7 @@ export class BridgeStudioRuntime implements StudioRuntime {
   async deleteReference(id: string): Promise<void> { await this.rpc("asset.delete", { id }); }
   async saveProvider(_profile: ProviderProfile, _secret?: string): Promise<ProviderProfile> { throw new Error("请在 Lensflow 插件中配置 Provider 和 API Key。"); }
   async listModels(): Promise<never[]> { throw new Error("模型发现只能在插件 Provider 设置中执行。"); }
-  async testConnection(): Promise<{ latencyMs: number; modelCount: number }> { throw new Error("连接检测只能在插件中执行。"); }
+  async testConnection(): Promise<ProviderConnectionResult> { throw new Error("连接检测只能在插件中执行。"); }
   async probeCapabilities(): Promise<ProviderCapabilities> { throw new Error("能力检测只能在插件中主动执行。"); }
   async createBatch(input: BatchCreateInput): Promise<GenerationBatch> { return this.rpc("task.create", input); }
   async retryFailed(batchId: string): Promise<GenerationBatch> { return this.rpc("task.retryFailed", { batchId }); }
@@ -122,6 +155,8 @@ export class BridgeStudioRuntime implements StudioRuntime {
   async download(batchId: string, childId?: string): Promise<void> { await this.rpc("download", { batchId, childId }); }
   async openCapture(): Promise<void> { await this.rpc("capture.open"); }
   async openBackup(): Promise<void> { await this.rpc("backup.open"); }
+  async openProviderSettings(): Promise<void> { await this.rpc("provider.open"); }
+  async openAnalysis(assetId: string): Promise<void> { await this.rpc("analysis.open", { assetId }); }
   async importCapture(input: { name: string; dataUrl: string; mimeType: string; size: number }): Promise<AssetRecord> {
     if (input.size > 1_400_000) throw new Error("网页桥接单次图片限制为 1.4 MB。请在插件工作台上传较大的原图。");
     const measured = await measureImageDataUrl(input.dataUrl);

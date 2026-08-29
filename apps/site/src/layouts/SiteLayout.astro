@@ -1,9 +1,19 @@
 ---
 import "../styles/global.css";
+import { Menu as MenuIcon, X } from "lucide-react";
 interface Props { title: string; description: string; }
 const { title, description } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const canonical = new URL(Astro.url.pathname, Astro.site);
+const navItems = [
+  { label: "产品", href: `${base}/product` },
+  { label: "创作空间", href: `${base}/studio` },
+  { label: "文档", href: `${base}/docs/` },
+  { label: "下载", href: `${base}/download` },
+  { label: "更新日志", href: `${base}/changelog` },
+  { label: "GitHub", href: "https://github.com/AJ-nb/lensflow", external: true }
+];
+const isActive = (href: string) => !href.startsWith("http") && (Astro.url.pathname === href || Astro.url.pathname.startsWith(`${href}/`) || (href.endsWith("/") && Astro.url.pathname.startsWith(href)));
 ---
 <!doctype html>
 <html lang="zh-CN">
@@ -24,20 +34,86 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   <body>
     <header class="site-header">
       <a class="site-brand" href={`${base}/`}><img src={`${base}/brand/lensflow-mark.png`} width="28" height="28" alt="" /><strong>镜序 Lensflow</strong></a>
-      <nav aria-label="主导航">
-        <a href={`${base}/product`}>产品</a>
-        <a href={`${base}/studio`}>创作空间</a>
-        <a href={`${base}/docs/`}>文档</a>
-        <a href={`${base}/download`}>下载</a>
-        <a href={`${base}/changelog`}>更新日志</a>
-        <a href="https://github.com/AJ-nb/lensflow">GitHub</a>
+      <nav id="site-navigation" aria-label="主导航" data-site-nav>
+        {navItems.map((item) => <a href={item.href} aria-current={isActive(item.href) ? "page" : undefined} target={item.external ? "_blank" : undefined} rel={item.external ? "noreferrer" : undefined}>{item.label}</a>)}
       </nav>
-      <a class="header-cta" href={`${base}/download`}>安装插件</a>
+      <button class="site-menu-button" type="button" aria-label="打开导航" aria-controls="site-navigation" aria-expanded="false" data-menu-toggle><MenuIcon className="menu-open-icon" size={19} /><X className="menu-close-icon" size={19} /></button>
+      <a class="header-cta" data-install-cta data-install-state="checking" aria-busy="true" href={`${base}/download`}>检测中</a>
     </header>
     <slot />
     <footer class="site-footer">
       <div><strong>镜序 Lensflow</strong><span>本地 AI 创作工作台</span></div>
       <nav><a href={`${base}/privacy`}>隐私</a><a href={`${base}/docs/`}>文档</a><a href="https://github.com/AJ-nb/lensflow/blob/main/LICENSE">MIT License</a></nav>
     </footer>
+    <script is:inline define:vars={{ base }}>
+      const menu = document.querySelector("[data-site-nav]");
+      const menuToggle = document.querySelector("[data-menu-toggle]");
+      const setMenuOpen = (open) => {
+        if (!menu || !menuToggle) return;
+        menu.dataset.open = String(open);
+        menuToggle.setAttribute("aria-expanded", String(open));
+        menuToggle.setAttribute("aria-label", open ? "关闭导航" : "打开导航");
+      };
+      menuToggle?.addEventListener("click", () => setMenuOpen(menu?.dataset.open !== "true"));
+      menu?.querySelectorAll("a").forEach((link) => link.addEventListener("click", () => setMenuOpen(false)));
+      window.addEventListener("keydown", (event) => { if (event.key === "Escape") setMenuOpen(false); });
+
+      const ctas = [...document.querySelectorAll("[data-install-cta]")];
+      const applyCtaState = (state, version) => {
+        const labels = { checking: "检测中", install: "安装 Lensflow", enter: "进入创作空间", update: version ? `更新至 v${version}` : "更新插件" };
+        for (const cta of ctas) {
+          cta.dataset.installState = state;
+          cta.textContent = labels[state];
+          cta.href = state === "enter" ? `${base}/studio` : `${base}/download`;
+          if (state === "checking") cta.setAttribute("aria-busy", "true");
+          else cta.removeAttribute("aria-busy");
+        }
+      };
+      const compareVersions = (left, right) => {
+        const a = left.split(/[.-]/).slice(0, 3).map((value) => Number(value) || 0);
+        const b = right.split(/[.-]/).slice(0, 3).map((value) => Number(value) || 0);
+        for (let index = 0; index < 3; index += 1) if (a[index] !== b[index]) return a[index] - b[index];
+        return 0;
+      };
+      if (ctas.length) {
+        applyCtaState("checking");
+        const nonce = `${crypto.randomUUID()}${crypto.randomUUID()}`;
+        let settled = false;
+        const finish = (state, version) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          window.removeEventListener("message", onBridge);
+          applyCtaState(state, version);
+        };
+        const onBridge = (event) => {
+          if (event.source !== window || event.origin !== location.origin || event.data?.nonce !== nonce) return;
+          if (event.data?.type === "LENSFLOW_BRIDGE_INCOMPATIBLE") {
+            finish("update", event.data?.extensionVersion);
+            return;
+          }
+          if (event.data?.type !== "LENSFLOW_BRIDGE_CONNECTED" || !event.ports[0]) return;
+          const port = event.ports[0];
+          const id = crypto.randomUUID();
+          port.onmessage = async (message) => {
+            if (message.data?.id !== id || !message.data.ok) return;
+            const installed = message.data.data?.extensionVersion || "0.0.0";
+            let latest = installed;
+            try {
+              const response = await fetch(`${base}/latest.json`, { cache: "no-store" });
+              const manifest = await response.json();
+              if (manifest.status === "published") latest = manifest.version;
+            } catch { /* Installed extension remains usable if the release feed is offline. */ }
+            finish(compareVersions(latest, installed) > 0 ? "update" : "enter", latest);
+            port.close();
+          };
+          port.start();
+          port.postMessage({ version: 1, id, nonce, method: "version.get", timestamp: Date.now() });
+        };
+        window.addEventListener("message", onBridge);
+        window.postMessage({ type: "LENSFLOW_BRIDGE_CONNECT", version: 1, nonce }, location.origin);
+        const timer = window.setTimeout(() => finish("install"), 1400);
+      }
+    </script>
   </body>
 </html>

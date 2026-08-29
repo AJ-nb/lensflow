@@ -12,15 +12,18 @@ export interface FanGalleryProps {
   onEagle?: (child: GenerationChild) => Promise<string>;
   onCancel: () => Promise<void> | void;
   canCancel: boolean;
+  logoUrl?: string;
 }
 
-export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDownload, onEagle, onCancel, canCancel }: FanGalleryProps) {
+export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDownload, onEagle, onCancel, canCancel, logoUrl }: FanGalleryProps) {
   const [focused, setFocused] = useState(0);
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set());
   const [busyAction, setBusyAction] = useState("");
   const [notice, setNotice] = useState("");
+  const [containerWidth, setContainerWidth] = useState(960);
   const rootRef = useRef<HTMLDivElement>(null);
-  const layouts = useMemo(() => getFanLayout(batch.children.length, focused), [batch.children.length, focused]);
+  const revealTimers = useRef<number[]>([]);
+  const layouts = useMemo(() => getFanLayout(batch.children.length, focused, containerWidth), [batch.children.length, containerWidth, focused]);
   const readyCount = batch.children.filter((child) => child.state === "ready").length;
   const failedCount = batch.children.filter((child) => child.state === "failed").length;
   const activeCount = batch.children.filter((child) => child.state === "queued" || child.state === "generating" || child.state === "retrying").length;
@@ -32,13 +35,36 @@ export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDown
     }
   }, [batch.children, reducedMotion]);
 
+  useEffect(() => {
+    const element = rootRef.current;
+    if (!element) return;
+    const update = () => setContainerWidth(Math.max(280, element.getBoundingClientRect().width));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => () => {
+    revealTimers.current.forEach((timer) => window.clearTimeout(timer));
+  }, []);
+
   const reveal = (child: GenerationChild) => {
     if (child.state !== "ready") return;
     setRevealed((current) => new Set(current).add(child.id));
   };
 
   const revealAll = () => {
-    setRevealed(new Set(batch.children.filter((child) => child.state === "ready").map((child) => child.id)));
+    const ready = batch.children.filter((child) => child.state === "ready");
+    revealTimers.current.forEach((timer) => window.clearTimeout(timer));
+    revealTimers.current = [];
+    if (reducedMotion) {
+      setRevealed(new Set(ready.map((child) => child.id)));
+      return;
+    }
+    ready.forEach((child, index) => {
+      revealTimers.current.push(window.setTimeout(() => setRevealed((current) => new Set(current).add(child.id)), index * 110));
+    });
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -46,7 +72,7 @@ export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDown
       event.preventDefault();
       setFocused((current) => nextFanIndex(current, batch.children.length, event.key === "ArrowLeft" ? -1 : 1));
     }
-    if (event.key === "Enter") {
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       const child = batch.children[focused];
       if (child) reveal(child);
@@ -84,8 +110,10 @@ export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDown
         className={`lf-fan ${reducedMotion ? "is-reduced" : ""}`}
         tabIndex={0}
         role="listbox"
-        aria-label="生成结果卡池，使用左右方向键选择，按 Enter 揭示"
+        aria-label="生成结果卡池，使用左右方向键选择，按 Enter 或空格揭示"
+        aria-activedescendant={focusedChild ? `lf-result-${focusedChild.id}` : undefined}
         onKeyDown={onKeyDown}
+        style={{ "--lf-fan-width": `${containerWidth}px` } as React.CSSProperties}
       >
         {batch.children.map((child, index) => {
           const layout = layouts[index];
@@ -94,7 +122,9 @@ export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDown
           return (
             <button
               key={child.id}
+              id={`lf-result-${child.id}`}
               type="button"
+              tabIndex={-1}
               role="option"
               aria-selected={focused === index}
               aria-label={`结果 ${index + 1}，${child.state === "ready" ? isRevealed ? "已揭示" : "待揭示" : child.state}`}
@@ -103,17 +133,18 @@ export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDown
                 "--lf-angle": `${layout.angle}deg`,
                 "--lf-x": `${layout.offsetX}px`,
                 "--lf-y": `${layout.offsetY}px`,
-                zIndex: layout.zIndex
+                zIndex: layout.zIndex,
+                "--lf-deal-delay": `${index * 45}ms`
               } as React.CSSProperties}
               onFocus={() => setFocused(index)}
-              onClick={() => reveal(child)}
+              onClick={() => { setFocused(index); reveal(child); rootRef.current?.focus(); }}
             >
               <span className="lf-card-front">
                 {source ? <img src={source} alt="" /> : <span className="lf-card-status"><ImageIcon size={22} /><small>{child.state === "failed" ? "生成失败" : "生成中"}</small></span>}
                 <span className="lf-card-index">{String(index + 1).padStart(2, "0")}</span>
               </span>
               <span className="lf-card-back">
-                <ImageIcon size={26} />
+                {logoUrl ? <img className="lf-card-brand" src={logoUrl} alt="" /> : <ImageIcon size={26} />}
                 <strong>{child.state === "ready" ? "点击揭示" : child.state === "failed" ? "可以补全" : "正在生成"}</strong>
                 {(child.state === "generating" || child.state === "retrying") && <span className="lf-card-progress"><i style={{ width: `${Math.round((child.progress ?? 0) * 100)}%` }} /><small>{Math.round((child.progress ?? 0) * 100)}%</small></span>}
                 {child.state === "failed" && child.error && <small className="lf-card-error" title={child.error}>{child.error}</small>}

@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: lensflow-pages
   cancel-in-progress: false
 
 jobs:
@@ -30,6 +30,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - run: npm run build:extension
       - run: npm run zip
       - run: node scripts/release-artifacts.mjs

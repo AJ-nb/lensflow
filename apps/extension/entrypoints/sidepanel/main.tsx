@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { StudioApp } from "@lensflow/ui";
+import { ProviderDialog, StudioApp } from "@lensflow/ui";
 import "@lensflow/ui/styles.css";
 import { ExtensionStudioRuntime } from "../../lensflow/runtime";
 import { STORAGE_KEYS } from "../../shared/storage";
@@ -15,7 +15,7 @@ if (location.hash === "#legacy") {
     root.render(<React.StrictMode><button className="lensflow-back" onClick={() => { void returnToStudio(); }}>返回 Lensflow</button><LegacyApp /></React.StrictMode>);
   });
 } else {
-  root.render(<React.StrictMode><StudioApp runtime={new ExtensionStudioRuntime()} surface="sidepanel" logoUrl={browser.runtime.getURL("/icon-128.png")} /></React.StrictMode>);
+  root.render(<React.StrictMode><StudioApp runtime={new ExtensionStudioRuntime()} surface="sidepanel" providerDialog={ProviderDialog} logoUrl={browser.runtime.getURL("/icon-128.png")} /></React.StrictMode>);
 }
 
 async function returnToStudio() {

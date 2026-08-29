@@ -1,5 +1,6 @@
 import {
   AXIS_ORDER,
+  AXIS_LABELS,
   type AxisHand,
   type AxisName,
   type GenerationBatch,
@@ -30,6 +31,16 @@ export function drawHand(library: KeywordCard[], hand: AxisHand, random: () => n
 
 export function dedupeTray(cards: KeywordCard[]): KeywordCard[] {
   return [...new Map(cards.map((card) => [card.id, card])).values()];
+}
+
+export function validateKeywordInput(text: string, axis: AxisName, library: KeywordCard[]): string {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (!normalized) throw new Error("关键词不能为空。");
+  if (normalized.length > 240) throw new Error("关键词不能超过 240 个字符。");
+  if (library.some((card) => card.axis === axis && card.text.trim().replace(/\s+/g, " ").toLocaleLowerCase() === normalized.toLocaleLowerCase())) {
+    throw new Error(`“${AXIS_LABELS[axis]}”中已存在相同关键词。`);
+  }
+  return normalized;
 }
 
 export function compilePrompt(hand: AxisHand, body: string): string {
@@ -75,16 +86,20 @@ export interface FanCardLayout {
   zIndex: number;
 }
 
-export function getFanLayout(count: number, focusedIndex: number): FanCardLayout[] {
+export function getFanLayout(count: number, focusedIndex: number, containerWidth = 960): FanCardLayout[] {
   const safeCount = Math.max(1, Math.min(10, count));
   const span = safeCount === 1 ? 0 : Math.min(48, 10 + safeCount * 4.25);
   const step = safeCount === 1 ? 0 : span / (safeCount - 1);
+  const cardWidth = Math.max(116, Math.min(182, containerWidth * 0.2));
+  const availableTravel = Math.max(0, containerWidth - cardWidth - 32);
+  const idealTravel = (safeCount - 1) * Math.max(42, 92 - safeCount * 4);
+  const spacing = safeCount === 1 ? 0 : Math.min(availableTravel, idealTravel) / (safeCount - 1);
   return Array.from({ length: safeCount }, (_, index) => {
     const angle = -span / 2 + step * index;
     const centered = index - (safeCount - 1) / 2;
     return {
       angle,
-      offsetX: centered * Math.max(42, 92 - safeCount * 4),
+      offsetX: centered * spacing,
       offsetY: Math.abs(centered) * 7,
       zIndex: index === focusedIndex ? 100 : 10 + index
     };

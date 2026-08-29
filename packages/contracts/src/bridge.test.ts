@@ -7,7 +7,7 @@ import {
   parseBridgePayload
 } from "./bridge";
 
-function request(method: "task.cancel" | "asset.put", payload: unknown) {
+function request(method: "task.cancel" | "asset.put" | "provider.open" | "analysis.open", payload: unknown) {
   return bridgeRequestSchema.parse({
     version: 1,
     id: "d4f8efb9-dcb8-46f1-a56c-498ff0a29b88",
@@ -35,5 +35,13 @@ describe("bridge security contract", () => {
 
   it("rejects payloads over the fixed limit", () => {
     expect(() => assertBridgePayloadSize({ value: "x".repeat(MAX_BRIDGE_PAYLOAD_BYTES + 1) })).toThrow("2 MB");
+  });
+
+  it("allows only strict Provider and analysis navigation payloads", () => {
+    expect(parseBridgePayload(request("provider.open", undefined))).toBeUndefined();
+    expect(parseBridgePayload(request("analysis.open", { assetId: "asset-1" }))).toEqual({ assetId: "asset-1" });
+    expect(() => parseBridgePayload(request("provider.open", { apiKey: "secret" }))).toThrow();
+    expect(() => parseBridgePayload(request("analysis.open", { assetId: "asset-1", url: "https://example.com" }))).toThrow();
+    expect(() => parseBridgePayload(request("analysis.open", { assetId: "asset-1", filePath: "C:/secret.png" }))).toThrow();
   });
 });

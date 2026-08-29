@@ -8,7 +8,8 @@ import {
   getFanLayout,
   nextFanIndex,
   normalizeReferences,
-  retryFailedChildren
+  retryFailedChildren,
+  validateKeywordInput
 } from "./studio-logic";
 
 const now = "2026-08-29T00:00:00.000Z";
@@ -32,6 +33,13 @@ describe("five-axis composition", () => {
       motion: null
     };
     expect(compilePrompt(hand, "窗边光影")).toBe("胶片感，静物，低饱和，窗边光影");
+  });
+
+  it("rejects empty and duplicate keywords within the same axis", () => {
+    const existing = [card("s", "style", "胶片 感")];
+    expect(() => validateKeywordInput("   ", "style", existing)).toThrow("不能为空");
+    expect(() => validateKeywordInput("胶片   感", "style", existing)).toThrow("已存在");
+    expect(validateKeywordInput("胶片 感", "color", existing)).toBe("胶片 感");
   });
 });
 
@@ -68,11 +76,14 @@ describe("references and fan", () => {
   });
 
   it("fans up to ten cards and wraps keyboard focus", () => {
-    const layout = getFanLayout(10, 4);
+    const layout = getFanLayout(10, 4, 900);
     expect(layout).toHaveLength(10);
     expect(layout[0]?.angle).toBeCloseTo(-24);
     expect(layout[9]?.angle).toBeCloseTo(24);
     expect(layout[4]?.zIndex).toBe(100);
     expect(nextFanIndex(0, 5, -1)).toBe(4);
+    const narrow = getFanLayout(10, 4, 360);
+    expect(Math.abs(narrow[9]!.offsetX - narrow[0]!.offsetX)).toBeLessThan(Math.abs(layout[9]!.offsetX - layout[0]!.offsetX));
+    expect(narrow[0]?.angle).toBeCloseTo(-24);
   });
 });

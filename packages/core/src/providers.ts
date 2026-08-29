@@ -17,6 +17,17 @@ import { endpointUrl } from "./base-url";
 
 const PROBE_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2VQAAAABJRU5ErkJggg==";
 const PROBE_PNG_DATA_URL = `data:image/png;base64,${PROBE_PNG_BASE64}`;
+export const MODEL_CATALOG_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export interface ModelCatalogCache {
+  cachedAt?: number;
+  expiresAt?: number;
+  models?: ModelDescriptor[];
+}
+
+export function isModelCatalogCacheFresh(value: ModelCatalogCache | undefined, now = Date.now()): value is Required<ModelCatalogCache> {
+  return Boolean(value?.cachedAt && value.expiresAt && value.cachedAt <= now && value.expiresAt > now && Array.isArray(value.models));
+}
 
 export class ProviderHttpError extends Error {
   constructor(message: string, readonly status: number, readonly body?: unknown) {

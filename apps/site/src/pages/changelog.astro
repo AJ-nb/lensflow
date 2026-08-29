@@ -1,6 +1,10 @@
 ---
 import SiteLayout from "../layouts/SiteLayout.astro";
+import { releaseManifestSchema } from "@lensflow/contracts";
+import releaseFeed from "../../public/latest.json";
+const manifest = releaseManifestSchema.parse(releaseFeed);
+const published = manifest.status === "published";
 ---
 <SiteLayout title="更新日志｜镜序 Lensflow" description="Lensflow 版本更新与兼容信息">
-  <main><section class="page-hero"><div><span class="eyebrow">CHANGELOG</span><h1>更新日志</h1><p>版本、协议、迁移要求和已知限制都在这里公开记录。</p></div></section><section class="content-band prose"><h2>0.1.0 · 工作 MVP</h2><p>状态：开发中，尚未发布。</p><ul><li>建立 WXT、Astro、共享 core/contracts/ui monorepo。</li><li>加入本地 Studio、Provider 隔离、模型发现、批次任务和卡池揭示。</li><li>建立网站与插件 v1 受限桥接。</li><li>从 luck-power v0.6.3 保留图像分析、CMF、Eagle、备份和测试基础。</li></ul></section></main>
+  <main><section class="page-hero"><div><span class="eyebrow">CHANGELOG</span><h1>更新日志</h1><p>版本、协议、迁移要求和已知限制都在这里公开记录。</p></div></section><section class="content-band prose"><h2>{published ? manifest.version : manifest.plannedVersion} · 工作 MVP</h2><p>状态：{published ? `已于 ${new Date(manifest.publishedAt).toLocaleDateString("zh-CN")} 发布。` : "开发中，尚未发布。"}</p><ul><li>建立 WXT、Astro、共享 core/contracts/ui monorepo。</li><li>加入本地 Studio、Provider 隔离、模型发现、批次任务和卡池揭示。</li><li>建立网站与插件 v1 受限桥接。</li><li>从 luck-power v0.6.3 保留图像分析、CMF、Eagle、备份和测试基础。</li></ul>{published && <p><a href={manifest.notesUrl}>查看 GitHub Release 与完整更新说明</a></p>}</section></main>
 </SiteLayout>

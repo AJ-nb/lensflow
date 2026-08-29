@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export const releaseManifestSchema = z.object({
+export const publishedReleaseManifestSchema = z.object({
+  status: z.literal("published"),
   version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
   channel: z.enum(["stable", "beta"]),
   publishedAt: z.string().datetime(),
@@ -11,4 +12,12 @@ export const releaseManifestSchema = z.object({
   notesUrl: z.string().url(),
   storeUrl: z.string().url().optional()
 });
+export const unreleasedManifestSchema = z.object({
+  status: z.literal("unreleased"),
+  plannedVersion: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+  minimumChrome: z.string().regex(/^\d+$/),
+  bridgeProtocol: z.number().int().positive()
+});
+export const releaseManifestSchema = z.discriminatedUnion("status", [unreleasedManifestSchema, publishedReleaseManifestSchema]);
+export type PublishedReleaseManifest = z.infer<typeof publishedReleaseManifestSchema>;
 export type ReleaseManifest = z.infer<typeof releaseManifestSchema>;

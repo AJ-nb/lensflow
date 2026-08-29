@@ -11,6 +11,7 @@ import type {
   MaintenanceSummary,
   ModelDescriptor,
   ProviderCapabilities,
+  ProviderConnectionResult,
   ProviderProfile,
   ReferenceKind,
   StudioReference,
@@ -89,7 +90,7 @@ export class ExtensionStudioRuntime implements StudioRuntime {
     return send({ type: "LENSFLOW_LIST_MODELS", providerId, refresh });
   }
 
-  async testConnection(providerId: string): Promise<{ latencyMs: number; modelCount: number }> {
+  async testConnection(providerId: string): Promise<ProviderConnectionResult> {
     return send({ type: "LENSFLOW_TEST_PROVIDER", providerId });
   }
 
@@ -132,6 +133,14 @@ export class ExtensionStudioRuntime implements StudioRuntime {
 
   async openBackup(): Promise<void> {
     await send({ type: "LENSFLOW_OPEN_WORKSPACE", hash: "#backup" });
+  }
+
+  async openProviderSettings(): Promise<void> {
+    await send({ type: "LENSFLOW_OPEN_WORKSPACE", hash: "#provider" });
+  }
+
+  async openAnalysis(assetId: string): Promise<void> {
+    await send({ type: "LENSFLOW_OPEN_ANALYSIS", assetId });
   }
 
   async openLegacyWorkbench(): Promise<void> {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, FileJson, FlaskConical, Loader2, RefreshCw, Settings2, X } from "lucide-react";
 import {
   DEFAULT_BIYUAN_PROFILE,
@@ -10,7 +11,7 @@ import {
 } from "@lensflow/contracts";
 import { endpointUrl, normalizeBaseUrl } from "@lensflow/core";
 
-interface ProviderDialogProps {
+export interface ProviderDialogProps {
   runtime: StudioRuntime;
   provider: ProviderProfile | null;
   open: boolean;
@@ -24,10 +25,12 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
   const [secret, setSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
   const [models, setModels] = useState<ModelDescriptor[]>([]);
+  const [connected, setConnected] = useState(false);
   const [capabilities, setCapabilities] = useState<ProviderCapabilities | null>(null);
   const [status, setStatus] = useState("");
   const [statusKind, setStatusKind] = useState<"success" | "warning">("success");
   const [busy, setBusy] = useState("");
+  const [probeConfirmationOpen, setProbeConfirmationOpen] = useState(false);
   const workflowInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -35,6 +38,7 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
     setDraft(provider ?? { ...DEFAULT_BIYUAN_PROFILE, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     setSecret("");
     setCapabilities(null);
+    setConnected(false);
     setStatus("");
   }, [open, provider]);
 
@@ -75,15 +79,14 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
   const testConnection = () => run("test", async () => {
     const saved = await persistDraft();
     const result = await runtime.testConnection(saved.id);
+    setModels(result.models);
+    setConnected(true);
     setStatusKind("success");
-    setStatus(`连接成功：GET ${modelEndpoint} · ${result.modelCount} 个模型 · ${result.latencyMs} ms。`);
+    setStatus(`连接成功：GET ${modelEndpoint} · ${result.models.length} 个模型 · ${result.latencyMs} ms。${result.warnings.length ? ` ${result.warnings.join("；")}` : ""}`);
   });
 
   const probe = async () => {
-    const requestCount = 1 + (draft.analysisModel ? 2 : 0) + (draft.imageModel ? 2 : 0);
-    const billable = draft.analysisModel || draft.imageModel;
-    const confirmed = window.confirm(`能力检测最多发送 ${requestCount} 次请求。${billable ? "其中分析、生成和编辑请求可能计费；每项只发送一次且失败不重试。" : "当前只检测鉴权。"}是否继续？`);
-    if (!confirmed) return;
+    setProbeConfirmationOpen(false);
     await run("probe", async () => {
       const saved = await persistDraft();
       const result = await runtime.probeCapabilities(saved.id);
@@ -93,6 +96,8 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
       await onSaved();
     });
   };
+  const requestCount = 1 + (draft.analysisModel ? 2 : 0) + (draft.imageModel ? 2 : 0);
+  const billableCategories = [draft.analysisModel ? "视觉分析与结构化输出" : "", draft.imageModel ? "图片生成与编辑" : ""].filter(Boolean);
 
   const importWorkflow = async (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
@@ -120,12 +125,20 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
         aria-describedby="provider-description"
         onCloseAutoFocus={(event) => {
           if (!returnFocusRef?.current) return;
+          const returnTarget = returnFocusRef.current;
           event.preventDefault();
-          returnFocusRef.current.focus();
+          window.setTimeout(() => returnTarget.focus(), 0);
         }}
       >
         <div className="lf-dialog-titlebar"><div><span className="lf-kicker">本地 Provider</span><Dialog.Title>连接生成服务</Dialog.Title></div><Dialog.Close className="lf-icon-button" aria-label="关闭"><X size={18} /></Dialog.Close></div>
         <Dialog.Description id="provider-description">密钥只交给插件后台；网页、日志、IndexedDB、诊断包和备份都无法读取。</Dialog.Description>
+
+        <ol className="lf-provider-steps" aria-label="Provider 配置步骤">
+          <li className={connected ? "is-complete" : "is-active"}><span>{connected ? <CheckCircle2 size={14} /> : "1"}</span>连接并读取模型</li>
+          <li className={connected && draft.analysisModel && draft.imageModel ? "is-complete" : connected ? "is-active" : ""}><span>2</span>选择模型</li>
+          <li className={capabilities ? "is-complete" : connected ? "" : ""}><span>3</span>主动检测能力</li>
+          <li><span>4</span>完成配置</li>
+        </ol>
 
         <div className="lf-provider-presets" role="group" aria-label="Provider 预设">
           <button type="button" className={draft.kind === "biyuan" ? "is-active" : ""} onClick={() => setDraft({ ...DEFAULT_BIYUAN_PROFILE, createdAt: draft.createdAt, updatedAt: new Date().toISOString() })}>彼源</button>
@@ -152,13 +165,16 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
         {capabilities && <div className="lf-probe-results">{Object.entries(capabilities).map(([name, value]) => <div key={name}><span>{capabilityLabel(name)}</span><em className={`state-${value}`}>{value}</em></div>)}</div>}
         {status && <p className={`lf-inline-status is-${statusKind}`}>{statusKind === "success" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}{status}</p>}
         <div className="lf-dialog-actions">
-          <button className="lf-button" type="button" onClick={testConnection} disabled={Boolean(busy) || !draft.baseUrl.trim()}>{busy === "test" ? <Loader2 className="is-spinning" size={16} /> : <CheckCircle2 size={16} />}测试连接</button>
-          <button className="lf-button" type="button" onClick={discover} disabled={Boolean(busy) || !draft.baseUrl.trim()}>{busy === "discover" ? <Loader2 className="is-spinning" size={16} /> : <RefreshCw size={16} />}发现模型</button>
-          <button className="lf-button" type="button" onClick={() => void probe()} disabled={Boolean(busy)}>{busy === "probe" ? <Loader2 className="is-spinning" size={16} /> : <FlaskConical size={16} />}检测能力</button>
-          <button className="lf-button is-primary" type="button" onClick={save} disabled={Boolean(busy)}>{busy === "save" ? "正在保存" : "保存设置"}</button>
+          <button className="lf-button is-primary" type="button" onClick={testConnection} disabled={Boolean(busy) || !draft.baseUrl.trim()}>{busy === "test" ? <Loader2 className="is-spinning" size={16} /> : <CheckCircle2 size={16} />}连接并读取模型</button>
+          <button className="lf-button" type="button" onClick={discover} disabled={Boolean(busy) || !connected}>{busy === "discover" ? <Loader2 className="is-spinning" size={16} /> : <RefreshCw size={16} />}刷新目录</button>
+          <button className="lf-button" type="button" onClick={() => setProbeConfirmationOpen(true)} disabled={Boolean(busy) || !connected}>{busy === "probe" ? <Loader2 className="is-spinning" size={16} /> : <FlaskConical size={16} />}检测能力</button>
+          <button className="lf-button is-primary" type="button" onClick={save} disabled={Boolean(busy) || !connected}>{busy === "save" ? "正在保存" : "保存设置"}</button>
         </div>
       </Dialog.Content>
     </Dialog.Portal>
+    <AlertDialog.Root open={probeConfirmationOpen} onOpenChange={setProbeConfirmationOpen}>
+      <AlertDialog.Portal><AlertDialog.Overlay className="lf-dialog-overlay lf-alert-overlay" /><AlertDialog.Content className="lf-dialog-content lf-alert-content"><div className="lf-dialog-titlebar"><div><span className="lf-kicker">主动能力检测</span><AlertDialog.Title>确认发送最多 {requestCount} 次请求</AlertDialog.Title></div></div><AlertDialog.Description>检测会依次验证鉴权、图像输入、Structured Outputs、图片生成、图片编辑与后台任务。</AlertDialog.Description><div className="lf-probe-warning"><AlertTriangle size={18} /><div><strong>{billableCategories.length ? `可能计费：${billableCategories.join("、")}` : "当前仅检测鉴权"}</strong><span>每项最多发送一次；超时、429、5xx 或 Schema 失败均不自动重试。</span></div></div><div className="lf-dialog-actions"><AlertDialog.Cancel className="lf-button">返回修改</AlertDialog.Cancel><AlertDialog.Action className="lf-button is-primary" onClick={() => void probe()}>确认并开始检测</AlertDialog.Action></div></AlertDialog.Content></AlertDialog.Portal>
+    </AlertDialog.Root>
   </Dialog.Root>;
 }
 

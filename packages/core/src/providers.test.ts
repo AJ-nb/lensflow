@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_BIYUAN_PROFILE } from "@lensflow/contracts";
-import { BiyuanAdapter, OpenAICompatibleAdapter, ProviderHttpError, comfyWebSocketUrl, extractModelModalities } from "./providers";
+import { BiyuanAdapter, MODEL_CATALOG_CACHE_TTL_MS, OpenAICompatibleAdapter, ProviderHttpError, comfyWebSocketUrl, extractModelModalities, isModelCatalogCacheFresh } from "./providers";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("provider adapters", () => {
+  it("accepts model catalogs only inside the 24 hour cache window", () => {
+    const now = Date.parse("2026-08-29T00:00:00.000Z");
+    const cache = { cachedAt: now, expiresAt: now + MODEL_CATALOG_CACHE_TTL_MS, models: [] };
+    expect(isModelCatalogCacheFresh(cache, now + MODEL_CATALOG_CACHE_TTL_MS - 1)).toBe(true);
+    expect(isModelCatalogCacheFresh(cache, now + MODEL_CATALOG_CACHE_TTL_MS)).toBe(false);
+  });
   it("classifies only explicit model metadata and leaves missing metadata unknown", () => {
     expect(extractModelModalities({ input_modalities: ["text", "image"], output_modalities: ["text"] })).toEqual(["text", "image"]);
     expect(extractModelModalities({ id: "gpt-image-looking-name" })).toEqual([]);
