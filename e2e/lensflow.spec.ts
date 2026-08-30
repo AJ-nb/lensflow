@@ -213,7 +213,7 @@ test("collection exposes keyword, prompt, palette and work assets without mixing
   state.assets.push({ id: "work-1", kind: "work", name: "音箱作品", previewUrl: "/lensflow/brand/lensflow-mark.png", prompt: "产品摄影提示词", metadata: {}, createdAt: now, updatedAt: now });
   await installBridgeMock(page, state);
   await page.goto("studio");
-  await page.getByRole("button", { name: "收藏", exact: true }).click();
+  await page.getByRole("navigation", { name: "工作区" }).getByRole("button", { name: "收藏", exact: true }).click();
   await expect(page.getByRole("tab", { name: "关键词 1" })).toBeVisible();
   await page.getByRole("tab", { name: "提示词 1" }).click();
   await expect(page.getByText("产品摄影提示词", { exact: true })).toBeVisible();
@@ -235,7 +235,7 @@ test("history filters tasks and opens the selected older batch instead of the ne
   });
   await installBridgeMock(page, state);
   await page.goto("studio");
-  await page.getByRole("button", { name: "历史", exact: true }).click();
+  await page.getByRole("navigation", { name: "工作区" }).getByRole("button", { name: "历史", exact: true }).click();
   await expect(page.getByRole("heading", { name: "历史与任务" })).toBeVisible();
   await page.getByLabel("任务类型").selectOption("generation");
   await expect(page.getByText("白色便携音箱", { exact: true })).toHaveCount(0);
