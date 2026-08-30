@@ -14,7 +14,7 @@ export default defineConfig({
     starlight({
       title: "镜序 Lensflow 文档",
       description: "Lensflow 本地 AI 创作工作台文档",
-      favicon: "/lensflow/favicon.png",
+      favicon: "/favicon.png",
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/AJ-nb/lensflow" }],
       sidebar: [
         { label: "开始使用", items: [{ label: "概览", slug: "docs" }, { label: "安装", slug: "docs/install" }, { label: "Provider", slug: "docs/provider" }] },
