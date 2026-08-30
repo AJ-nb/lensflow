@@ -3,7 +3,11 @@ import {
   UNKNOWN_CAPABILITIES,
   bridgeResponseSchema,
   type AssetRecord,
+  type AnalysisMode,
+  type AnalysisRecord,
   type BatchCreateInput,
+  type BatchSelection,
+  type EagleWorkExportResult,
   type BridgeMethod,
   type GenerationBatch,
   type KeywordCard,
@@ -11,6 +15,8 @@ import {
   type ProviderConnectionResult,
   type ProviderProfile,
   type ReferenceKind,
+  type SavePromptInput,
+  type SavedPrompt,
   type StudioReference,
   type StudioRuntime,
   type StudioSnapshot
@@ -27,6 +33,8 @@ const EMPTY: StudioSnapshot = {
   provider: null,
   capabilities: { ...UNKNOWN_CAPABILITIES },
   keywords: [],
+  analyses: [],
+  prompts: [],
   assets: [],
   references: [],
   batches: [],
@@ -157,6 +165,14 @@ export class BridgeStudioRuntime implements StudioRuntime {
   async openBackup(): Promise<void> { await this.rpc("backup.open"); }
   async openProviderSettings(): Promise<void> { await this.rpc("provider.open"); }
   async openAnalysis(assetId: string): Promise<void> { await this.rpc("analysis.open", { assetId }); }
+  async analyzeAsset(assetId: string, mode: AnalysisMode): Promise<AnalysisRecord> { return this.rpc("analysis.create", { assetId, mode }); }
+  async getAnalysis(analysisId: string): Promise<AnalysisRecord> { return this.rpc("analysis.get", { analysisId }); }
+  async cancelAnalysis(analysisId: string): Promise<AnalysisRecord> { return this.rpc("analysis.cancel", { analysisId }); }
+  async savePrompt(input: SavePromptInput): Promise<SavedPrompt> { return this.rpc("prompt.save", input); }
+  async downloadMany(selection: BatchSelection): Promise<void> {
+    for (const childId of selection.childIds) await this.rpc("download", { batchId: selection.batchId, childId });
+  }
+  async exportManyToEagle(selection: BatchSelection): Promise<EagleWorkExportResult[]> { return this.rpc("eagle.export", selection); }
   async importCapture(input: { name: string; dataUrl: string; mimeType: string; size: number }): Promise<AssetRecord> {
     if (input.size > 1_400_000) throw new Error("网页桥接单次图片限制为 1.4 MB。请在插件工作台上传较大的原图。");
     const measured = await measureImageDataUrl(input.dataUrl);

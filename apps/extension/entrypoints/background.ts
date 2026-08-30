@@ -1,7 +1,8 @@
 import { defineBackground } from "wxt/utils/define-background";
 import { normalizeApiBaseUrl } from "../shared/api-models";
 import { STORAGE_KEYS } from "../shared/storage";
-import { handleLensflowRequest, resumeRemoteTasks } from "../lensflow/background-service";
+import { captureSourceForStudio, handleLensflowRequest, migrateLegacyProviderSettings, resumeRemoteTasks } from "../lensflow/background-service";
+import { planLegacySettingsPersistence } from "../lensflow/legacy-provider-migration";
 import {
   CURRENT_SETTINGS_VERSION,
   DEFAULT_SETTINGS,
@@ -16,6 +17,7 @@ import {
 export default defineBackground(() => {
   const sidePanelPorts = new Set<Browser.runtime.Port>();
   let activePickerTabId: number | undefined;
+  void migrateLegacyProviderSettings().catch((error) => console.warn("[Lensflow] 旧 Provider 密钥迁移失败", error));
 
   browser.runtime.onInstalled.addListener(async () => {
     await browser.contextMenus.removeAll();
@@ -61,7 +63,7 @@ export default defineBackground(() => {
     const intent: CaptureIntent = info.menuItemId === "lensflow-analyze-generate" ? "analyze-generate" : "analyze";
     await browser.storage.session.set({ [STORAGE_KEYS.captureIntent]: intent });
     await setSelection(source, intent);
-    if (tab?.id !== undefined) await openLegacySidePanel(tab.id);
+    if (tab?.id !== undefined) await openStudioSidePanel(tab.id);
   });
 
   browser.alarms.onAlarm.addListener((alarm) => {
@@ -157,8 +159,7 @@ async function handleRequest(request: RuntimeRequest, sender: Browser.runtime.Me
       if (request.intent) await browser.storage.session.set({ [STORAGE_KEYS.captureIntent]: request.intent });
       await setSelection(source, request.intent);
       if (source.tabId !== undefined) {
-        if (request.intent) await openLegacySidePanel(source.tabId);
-        else await openStudioSidePanel(source.tabId);
+        await openStudioSidePanel(source.tabId);
       }
       return source;
     }
@@ -181,17 +182,22 @@ async function handleRequest(request: RuntimeRequest, sender: Browser.runtime.Me
 }
 
 async function getSettings(): Promise<AppSettings> {
-  const [stored, session] = await Promise.all([
+  const [stored, session, providerSession, providerLocal] = await Promise.all([
     browser.storage.local.get(STORAGE_KEYS.settings),
-    browser.storage.session.get(STORAGE_KEYS.sessionApiKey)
+    browser.storage.session.get(STORAGE_KEYS.sessionApiKey),
+    browser.storage.session.get(STORAGE_KEYS.sessionProviderSecrets),
+    browser.storage.local.get(STORAGE_KEYS.providerSecrets)
   ]);
   const raw = stored[STORAGE_KEYS.settings] as Partial<AppSettings> | undefined;
   const sessionApiKey = session[STORAGE_KEYS.sessionApiKey];
+  const sessionSecrets = providerSession[STORAGE_KEYS.sessionProviderSecrets] as Record<string, string> | undefined;
+  const localSecrets = providerLocal[STORAGE_KEYS.providerSecrets] as Record<string, string> | undefined;
+  const migratedKey = Object.values(sessionSecrets ?? {})[0] || Object.values(localSecrets ?? {})[0];
   const normalized = normalizeSettings({
     ...raw,
     apiKey: typeof sessionApiKey === "string"
       ? sessionApiKey
-      : raw?.apiKey
+      : raw?.apiKey || migratedKey
   });
   if (raw?.settingsVersion !== CURRENT_SETTINGS_VERSION) {
     await persistSettings(normalized);
@@ -213,19 +219,22 @@ async function saveSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
 }
 
 async function persistSettings(settings: AppSettings): Promise<void> {
-  if (settings.rememberApiKey) {
-    await Promise.all([
-      browser.storage.local.set({ [STORAGE_KEYS.settings]: settings }),
-      browser.storage.session.remove(STORAGE_KEYS.sessionApiKey)
-    ]);
-    return;
-  }
-  const { apiKey, ...safeSettings } = settings;
+  const [sessionStored, localStored] = await Promise.all([
+    browser.storage.session.get(STORAGE_KEYS.sessionProviderSecrets),
+    browser.storage.local.get(STORAGE_KEYS.providerSecrets)
+  ]);
+  const persistence = planLegacySettingsPersistence({
+    settings,
+    sessionSecrets: sessionStored[STORAGE_KEYS.sessionProviderSecrets] as Record<string, string> | undefined,
+    localSecrets: localStored[STORAGE_KEYS.providerSecrets] as Record<string, string> | undefined
+  });
   await Promise.all([
-    browser.storage.local.set({ [STORAGE_KEYS.settings]: { ...safeSettings, apiKey: "" } }),
-    apiKey
-      ? browser.storage.session.set({ [STORAGE_KEYS.sessionApiKey]: apiKey })
-      : browser.storage.session.remove(STORAGE_KEYS.sessionApiKey)
+    browser.storage.local.set({
+      [STORAGE_KEYS.settings]: persistence.safeSettings,
+      [STORAGE_KEYS.providerSecrets]: persistence.localSecrets
+    }),
+    browser.storage.session.set({ [STORAGE_KEYS.sessionProviderSecrets]: persistence.sessionSecrets }),
+    browser.storage.session.remove(STORAGE_KEYS.sessionApiKey)
   ]);
 }
 
@@ -237,6 +246,7 @@ async function setSelection(source: ImageSource, intent?: CaptureIntent): Promis
   } catch {
     // The side panel is not open yet.
   }
+  if (intent) await captureSourceForStudio(source, intent);
 }
 
 async function openLegacySidePanel(tabId: number): Promise<void> {

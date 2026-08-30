@@ -5,4 +5,5 @@ export * from "./data-management";
 export * from "./legacy-import";
 export * from "./image-measure";
 export * from "./providers";
+export * from "./product-analysis";
 export * from "./studio-logic";

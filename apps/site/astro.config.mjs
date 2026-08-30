@@ -18,7 +18,7 @@ export default defineConfig({
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/AJ-nb/lensflow" }],
       sidebar: [
         { label: "开始使用", items: [{ label: "概览", slug: "docs" }, { label: "安装", slug: "docs/install" }, { label: "Provider", slug: "docs/provider" }] },
-        { label: "创作工作流", items: [{ label: "捕捉与解构", slug: "docs/capture" }, { label: "组合与生成", slug: "docs/studio" }, { label: "隐私与备份", slug: "docs/privacy" }] }
+        { label: "创作工作流", items: [{ label: "捕捉入口", slug: "docs/capture" }, { label: "产品分析与提示词", slug: "docs/analysis" }, { label: "组合与生成", slug: "docs/studio" }, { label: "隐私与备份", slug: "docs/privacy" }] }
       ],
       customCss: ["./src/styles/starlight.css"]
     })

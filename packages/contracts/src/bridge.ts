@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { analysisModeSchema, savePromptInputSchema } from "./product-analysis";
 import { assetRecordSchema, generationBatchSchema } from "./studio";
 
-export const LENSFLOW_BRIDGE_VERSION = 1 as const;
+export const LENSFLOW_BRIDGE_VERSION = 2 as const;
 export const LENSFLOW_SITE_ORIGIN = "https://aj-nb.github.io";
 export const MAX_BRIDGE_PAYLOAD_BYTES = 2_000_000;
 
@@ -19,7 +20,12 @@ export const bridgeMethodSchema = z.enum([
   "backup.open",
   "capture.open",
   "provider.open",
-  "analysis.open"
+  "analysis.open",
+  "analysis.create",
+  "analysis.get",
+  "analysis.cancel",
+  "prompt.save",
+  "eagle.export"
 ]);
 export type BridgeMethod = z.infer<typeof bridgeMethodSchema>;
 
@@ -61,6 +67,11 @@ const bridgePayloadSchemas: Record<BridgeMethod, z.ZodType> = {
   "capture.open": emptyPayloadSchema,
   "provider.open": emptyPayloadSchema,
   "analysis.open": z.object({ assetId: z.string().min(1).max(160) }).strict()
+  ,"analysis.create": z.object({ assetId: z.string().min(1).max(160), mode: analysisModeSchema }).strict()
+  ,"analysis.get": z.object({ analysisId: z.string().min(1).max(160) }).strict()
+  ,"analysis.cancel": z.object({ analysisId: z.string().min(1).max(160) }).strict()
+  ,"prompt.save": savePromptInputSchema.strict()
+  ,"eagle.export": z.object({ batchId: z.string().min(1).max(160), childIds: z.array(z.string().min(1).max(160)).min(1).max(10) }).strict()
 };
 
 export function parseBridgePayload(request: BridgeRequest): unknown {
@@ -76,7 +87,7 @@ export function assertNoSensitiveBridgeFields(value: unknown): void {
     }
     if (!item || typeof item !== "object") return;
     for (const [key, child] of Object.entries(item)) {
-      if (/^(?:api.?key|secret|authorization|access.?token|token)$/i.test(key)) {
+      if (/^(?:api.?key|secret|authorization|access.?token|token|url|file.?path|path)$/i.test(key)) {
         throw new Error(`桥接负载包含禁止字段：${key}`);
       }
       visit(child);

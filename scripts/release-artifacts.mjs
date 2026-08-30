@@ -29,7 +29,7 @@ const manifest = {
   channel: version.includes("-") ? "beta" : "stable",
   publishedAt,
   minimumChrome: "122",
-  bridgeProtocol: 1,
+  bridgeProtocol: 2,
   downloadUrl: `https://github.com/${repository}/releases/download/v${version}/${releaseName}`,
   sha256,
   notesUrl: `https://github.com/${repository}/releases/tag/v${version}`

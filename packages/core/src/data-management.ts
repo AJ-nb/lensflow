@@ -3,6 +3,7 @@ import {
   LENSFLOW_BACKUP_FORMAT,
   LENSFLOW_BACKUP_SCHEMA_VERSION,
   assetRecordSchema,
+  analysisRecordSchema,
   generationBatchSchema,
   historyEventSchema,
   studioReferenceSchema,
@@ -34,7 +35,7 @@ const captureSchema = z.object({
   sha256: z.string().optional(),
   createdAt: isoDate
 });
-const analysisSchema = z.object({
+const legacyAnalysisSchema = z.object({
   id: z.string().min(1),
   captureId: z.string().min(1),
   model: z.string(),
@@ -42,11 +43,18 @@ const analysisSchema = z.object({
   rawResponse: z.unknown().optional(),
   createdAt: isoDate
 });
+const analysisSchema = z.union([analysisRecordSchema, legacyAnalysisSchema]);
 const promptSchema = z.object({
   id: z.string().min(1),
   text: z.string(),
   axis: z.enum(["style", "subject", "composition", "color", "motion"]).optional(),
   kind: z.enum(["keyword", "prompt", "version"]),
+  negativeText: z.string().optional(),
+  language: z.enum(["zh", "en"]).optional(),
+  sourceAssetId: z.string().optional(),
+  sourceAnalysisId: z.string().optional(),
+  variantKind: z.enum(["faithful", "commercial", "exploratory"]).optional(),
+  model: z.string().optional(),
   createdAt: isoDate,
   updatedAt: isoDate
 });
@@ -61,7 +69,7 @@ const settingsMetaSchema = z.object({ key: z.string().min(1), value: z.unknown()
 
 const backupSchema = z.object({
   format: z.literal(LENSFLOW_BACKUP_FORMAT),
-  schemaVersion: z.literal(LENSFLOW_BACKUP_SCHEMA_VERSION),
+  schemaVersion: z.union([z.literal(1), z.literal(LENSFLOW_BACKUP_SCHEMA_VERSION)]),
   appVersion: z.string().min(1),
   exportedAt: isoDate,
   tables: z.object({
@@ -173,7 +181,22 @@ export async function importLensflowBackup(
     if (mode === "replace") await Promise.all(db.tables.map((table) => table.clear()));
     await Promise.all([
       db.captures.bulkPut(tables.captures as CaptureRecord[]),
-      db.analyses.bulkPut(tables.analyses as AnalysisRecord[]),
+      db.analyses.bulkPut(tables.analyses.map((row): AnalysisRecord => {
+        if ("assetId" in row) return row as AnalysisRecord;
+        return {
+          id: row.id,
+          assetId: row.captureId,
+          captureId: row.captureId,
+          mode: "deep",
+          state: "partial",
+          providerId: "legacy",
+          model: row.model,
+          rawResponse: row.result,
+          error: "从 Lensflow v1 备份迁移；请重新分析以生成 v2 结构化结果。",
+          createdAt: row.createdAt,
+          updatedAt: row.createdAt
+        };
+      })),
       db.prompts.bulkPut(tables.prompts as PromptRecord[]),
       db.references.bulkPut(tables.references),
       db.generationJobs.bulkPut(tables.generationJobs),

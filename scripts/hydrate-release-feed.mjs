@@ -7,7 +7,7 @@ const fallback = {
   status: "unreleased",
   plannedVersion: JSON.parse(await readFile(resolve("apps/extension/package.json"), "utf8")).version,
   minimumChrome: "122",
-  bridgeProtocol: 1
+  bridgeProtocol: 2
 };
 const headers = { Accept: "application/vnd.github+json", "User-Agent": "lensflow-release-feed" };
 if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;

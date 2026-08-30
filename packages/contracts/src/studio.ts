@@ -7,6 +7,7 @@ import type {
   HistoryRetentionDays,
   MaintenanceSummary
 } from "./data";
+import type { AnalysisMode, AnalysisRecord, AnalysisSummary, SavedPrompt, SavePromptInput } from "./product-analysis";
 
 export const evidenceSourceSchema = z.enum(["measured", "observed", "inferred", "unknown"]);
 export type EvidenceSource = z.infer<typeof evidenceSourceSchema>;
@@ -122,6 +123,12 @@ export interface StorageSummary {
   persisted: boolean;
 }
 
+export interface StudioCaptureHandoff {
+  assetId: string;
+  intent: "analyze" | "analyze-generate";
+  createdAt: string;
+}
+
 export const historyEventSchema = z.object({
   id: z.string().min(1),
   type: z.string().min(1),
@@ -141,11 +148,14 @@ export interface StudioSnapshot {
   provider: ProviderProfile | null;
   capabilities: ProviderCapabilities;
   keywords: KeywordCard[];
+  analyses: AnalysisSummary[];
+  prompts: SavedPrompt[];
   assets: AssetRecord[];
   references: StudioReference[];
   batches: GenerationBatch[];
   historyEvents: HistoryEvent[];
   storage: StorageSummary | null;
+  captureHandoff?: StudioCaptureHandoff | null;
 }
 
 export interface BatchCreateInput {
@@ -161,6 +171,11 @@ export interface EagleWorkExportResult {
   folders: string[];
   libraryName: string;
   itemCount: number;
+}
+
+export interface BatchSelection {
+  batchId: string;
+  childIds: string[];
 }
 
 export interface StudioRuntime {
@@ -185,6 +200,12 @@ export interface StudioRuntime {
   openBackup(): Promise<void>;
   openProviderSettings(): Promise<void>;
   openAnalysis(assetId: string): Promise<void>;
+  analyzeAsset(assetId: string, mode: AnalysisMode): Promise<AnalysisRecord>;
+  getAnalysis(id: string): Promise<AnalysisRecord>;
+  cancelAnalysis(id: string): Promise<AnalysisRecord>;
+  savePrompt(input: SavePromptInput): Promise<SavedPrompt>;
+  downloadMany(selection: BatchSelection): Promise<void>;
+  exportManyToEagle?(selection: BatchSelection): Promise<EagleWorkExportResult[]>;
   openLegacyWorkbench?(): Promise<void>;
   importCapture?(input: { name: string; dataUrl: string; mimeType: string; size: number }): Promise<AssetRecord>;
   exportBackup?(): Promise<BackupExport>;

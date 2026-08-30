@@ -1,8 +1,9 @@
 ---
 import SiteLayout from "../layouts/SiteLayout.astro";
 const rows = [
+  ["产品分析", "实体产品优先识别；通用视觉回退；一次快速结构化请求", "证据化结果与双语提示词"],
   ["捕捉", "网页图片 ≥96×96、P/V 悬浮入口、右键操作、上传与截图降级", "本地捕捉记录"],
-  ["解构", "先本地测量尺寸/比例/色卡，再调用视觉模型完成语义分析", "证据化分析与提示词"],
+  ["提示词", "中英文正向/负向、忠实复现/商业呈现/概念变化、版本追加", "可编辑提示词册"],
   ["组合", "五轴抽卡、锁定、词卡托盘、正文与参考优先级", "稳定顺序最终提示词"],
   ["预检", "鉴权、视觉、结构化输出、生成、编辑和后台任务分别检查", "阻断不受支持请求"],
   ["生成", "1–10 张、并发 1–4、父批次与子任务先落库", "可恢复任务与部分成功"],
@@ -10,7 +11,7 @@ const rows = [
 ];
 ---
 <SiteLayout title="产品能力｜镜序 Lensflow" description="深入了解 Lensflow 的本地捕捉、解构、组合、生成和资产工作流">
-  <main><section class="page-hero"><div><span class="eyebrow">PRODUCT</span><h1>一条完整的本地创作链路</h1><p>Lensflow 把网页灵感、结构化理解、提示词组合、批量生成和资产复用放进同一个可审查的 Chrome 插件中。</p></div></section>
+  <main><section class="page-hero"><div><span class="eyebrow">PRODUCT</span><h1>先分析产品，再把提示词变成创作资产</h1><p>Lensflow 把产品优先视觉分析、本地测量、双语提示词、组合、批量生成和资产复用放进同一个可审查的 Chrome 插件中。</p></div></section>
   <section class="content-band"><h2>从输入到复用</h2><table class="feature-table"><thead><tr><th>阶段</th><th>主要动作</th><th>落地结果</th></tr></thead><tbody>{rows.map((row) => <tr>{row.map((cell) => <td>{cell}</td>)}</tr>)}</tbody></table></section>
-  <section class="content-band alt"><h2>关键设计边界</h2><div class="detail-grid"><article><span class="eyebrow">LOCAL</span><h3>本地数据库</h3><p>捕捉、分析、提示词、参考、任务、资产、集合和历史事件都存入插件 IndexedDB。</p></article><article><span class="eyebrow">CONTROL</span><h3>用户自有 Provider</h3><p>填写完整 Base URL 和 API Key。目录与能力以认证后的真实响应为准，不硬编码模型或价格。</p></article><article><span class="eyebrow">RESILIENCE</span><h3>部分失败可恢复</h3><p>成功位置不会因单张失败丢失；补全操作只重试失败索引，并合并回原批次。</p></article></div></section></main>
+  <section class="content-band alt"><h2>关键设计边界</h2><div class="detail-grid"><article><span class="eyebrow">EVIDENCE</span><h3>本地测量优先</h3><p>尺寸、比例、方向和十六进制色卡由本机像素测量；模型只能标记 observed、inferred 或 unknown。</p></article><article><span class="eyebrow">CONTROL</span><h3>用户自有 Provider</h3><p>填写完整 Base URL 和 API Key。目录与能力以认证后的真实响应为准，不硬编码模型或价格。</p></article><article><span class="eyebrow">RESILIENCE</span><h3>部分失败可恢复</h3><p>分析有效字段和生成成功位置不会因局部失败丢失；付费请求不自动重试。</p></article></div></section></main>
 </SiteLayout>

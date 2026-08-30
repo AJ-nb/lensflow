@@ -1,6 +1,6 @@
 {
   "status": "unreleased",
-  "plannedVersion": "0.1.0",
+  "plannedVersion": "0.2.0",
   "minimumChrome": "122",
-  "bridgeProtocol": 1
+  "bridgeProtocol": 2
 }

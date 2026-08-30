@@ -1,9 +1,12 @@
 import type {
   AssetRecord,
+  AnalysisMode,
+  AnalysisRecord,
   BackupExport,
   BackupImportMode,
   BackupImportSummary,
   BatchCreateInput,
+  BatchSelection,
   GenerationBatch,
   EagleWorkExportResult,
   HistoryRetentionDays,
@@ -14,6 +17,8 @@ import type {
   ProviderConnectionResult,
   ProviderProfile,
   ReferenceKind,
+  SavePromptInput,
+  SavedPrompt,
   StudioReference,
   StudioRuntime,
   StudioSnapshot
@@ -141,6 +146,35 @@ export class ExtensionStudioRuntime implements StudioRuntime {
 
   async openAnalysis(assetId: string): Promise<void> {
     await send({ type: "LENSFLOW_OPEN_ANALYSIS", assetId });
+  }
+
+  async analyzeAsset(assetId: string, mode: AnalysisMode): Promise<AnalysisRecord> {
+    return send({ type: "LENSFLOW_ANALYZE_ASSET", assetId, mode });
+  }
+
+  async getAnalysis(analysisId: string): Promise<AnalysisRecord> {
+    return send({ type: "LENSFLOW_GET_ANALYSIS", analysisId });
+  }
+
+  async cancelAnalysis(analysisId: string): Promise<AnalysisRecord> {
+    return send({ type: "LENSFLOW_CANCEL_ANALYSIS", analysisId });
+  }
+
+  async savePrompt(input: SavePromptInput): Promise<SavedPrompt> {
+    return send({ type: "LENSFLOW_SAVE_PROMPT", input });
+  }
+
+  async downloadMany(selection: BatchSelection): Promise<void> {
+    await send({ type: "LENSFLOW_DOWNLOAD_MANY", selection });
+  }
+
+  async exportManyToEagle(selection: BatchSelection): Promise<EagleWorkExportResult[]> {
+    const origin = "http://localhost/*";
+    if (!await browser.permissions.contains({ origins: [origin] })) {
+      const granted = await browser.permissions.request({ origins: [origin] });
+      if (!granted) throw new Error("需要本机 Eagle API 权限才能导出。");
+    }
+    return send({ type: "LENSFLOW_EXPORT_EAGLE_MANY", selection });
   }
 
   async openLegacyWorkbench(): Promise<void> {

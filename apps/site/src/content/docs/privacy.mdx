@@ -14,7 +14,7 @@ API Key 默认保存在 `chrome.storage.session`。只有主动选择“在此�
 
 正式桥接只注入 `https://aj-nb.github.io/lensflow/*`，并使用 MessageChannel、Origin 校验、协议版本、会话 nonce、请求 ID、防重放和 2 MB 负载限制。
 
-允许方法：握手、版本、资产查询/写入、任务创建/取消/订阅、下载和打开备份界面。
+允许方法：握手、版本、资产摘要、分析创建/读取/取消、提示词保存、任务创建/取消/订阅、下载、Eagle 导出和打开备份界面。完整分析结果按 ID 单独读取，原始 Provider 响应不经过网页桥接。
 
 禁止内容：API Key、浏览历史、任意文件和任意 URL。
 

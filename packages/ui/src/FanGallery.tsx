@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Check, Download, FolderHeart, Image as ImageIcon, RotateCcw, Send, Square } from "lucide-react";
+import { AlertCircle, Check, CheckSquare, Download, FolderHeart, Image as ImageIcon, RotateCcw, Send, Square } from "lucide-react";
 import type { GenerationBatch, GenerationChild } from "@lensflow/contracts";
 import { getFanLayout, nextFanIndex } from "@lensflow/core";
 
@@ -9,17 +9,20 @@ export interface FanGalleryProps {
   onRetryFailed: () => Promise<void> | void;
   onSave: (child: GenerationChild) => Promise<void> | void;
   onDownload: (child?: GenerationChild) => Promise<void> | void;
+  onDownloadMany?: (children: GenerationChild[]) => Promise<void> | void;
   onEagle?: (child: GenerationChild) => Promise<string>;
+  onEagleMany?: (children: GenerationChild[]) => Promise<string>;
   onCancel: () => Promise<void> | void;
   canCancel: boolean;
   logoUrl?: string;
 }
 
-export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDownload, onEagle, onCancel, canCancel, logoUrl }: FanGalleryProps) {
+export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDownload, onDownloadMany, onEagle, onEagleMany, onCancel, canCancel, logoUrl }: FanGalleryProps) {
   const [focused, setFocused] = useState(0);
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set());
   const [busyAction, setBusyAction] = useState("");
   const [notice, setNotice] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [containerWidth, setContainerWidth] = useState(960);
   const rootRef = useRef<HTMLDivElement>(null);
   const revealTimers = useRef<number[]>([]);
@@ -28,6 +31,7 @@ export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDown
   const failedCount = batch.children.filter((child) => child.state === "failed").length;
   const activeCount = batch.children.filter((child) => child.state === "queued" || child.state === "generating" || child.state === "retrying").length;
   const focusedChild = batch.children[focused];
+  const selectedReady = batch.children.filter((child) => selected.has(child.id) && child.state === "ready");
 
   useEffect(() => {
     if (reducedMotion) {
@@ -159,7 +163,10 @@ export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDown
         <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("download-one", () => onDownload(focusedChild), "当前结果已加入下载队列")}><Download size={15} />下载</button>
         <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("save", () => onSave(focusedChild), "当前结果已收入作品集")}><FolderHeart size={15} />收入作品集</button>
         {onEagle && <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("eagle", () => onEagle(focusedChild), "已导出 Eagle")}><Send size={15} />导出 Eagle</button>}
+        <button className={`lf-button ${selected.has(focusedChild.id) ? "is-selected" : ""}`} disabled={Boolean(busyAction)} aria-pressed={selected.has(focusedChild.id)} onClick={() => setSelected((current) => { const next = new Set(current); if (next.has(focusedChild.id)) next.delete(focusedChild.id); else next.add(focusedChild.id); return next; })}><CheckSquare size={15} />{selected.has(focusedChild.id) ? "已选择" : "多选"}</button>
       </div>}
+
+      {selectedReady.length > 0 && <div className="lf-batch-selection" role="toolbar" aria-label="批量结果操作"><strong>已选 {selectedReady.length} 张</strong><button className="lf-button" disabled={!onDownloadMany || Boolean(busyAction)} onClick={() => void runAction("download-many", () => onDownloadMany?.(selectedReady), `已提交 ${selectedReady.length} 张下载`)}><Download size={15} />批量下载</button>{onEagleMany && <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("eagle-many", () => onEagleMany(selectedReady), "已批量导出 Eagle")}><Send size={15} />批量 Eagle</button>}<button className="lf-button" onClick={() => setSelected(new Set())}>清除选择</button></div>}
 
       <div className="lf-result-actions">
         <button className="lf-button is-primary" type="button" onClick={revealAll} disabled={readyCount === 0}>

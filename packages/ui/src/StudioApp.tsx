@@ -4,6 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertTriangle,
   Archive,
+  ArrowRight,
   BookOpenText,
   Boxes,
   Check,
@@ -12,6 +13,7 @@ import {
   CloudOff,
   DatabaseBackup,
   Download,
+  Copy,
   FileImage,
   FolderHeart,
   History,
@@ -25,6 +27,7 @@ import {
   PersonStanding,
   Plus,
   RefreshCw,
+  Save,
   Search,
   ScanFace,
   Settings,
@@ -42,6 +45,10 @@ import {
   UNKNOWN_CAPABILITIES,
   type AxisHand,
   type AxisName,
+  type AnalysisMode,
+  type AnalysisRecord,
+  type AnalysisSummary,
+  type AssetRecord,
   type BackupImportMode,
   type GenerationBatch,
   type GenerationSettings,
@@ -65,17 +72,99 @@ export interface StudioAppProps {
   providerDialog?: ComponentType<ProviderDialogProps>;
 }
 
+function AnalysisStage({ asset, summary, record, busy, readOnly, onQuick, onDeep, onCancel, onAdvanced, onSavePrompt, onUsePrompt, onSavePalette, onBack, onContinue }: {
+  asset: AssetRecord | null;
+  summary: AnalysisSummary | null;
+  record: AnalysisRecord | null;
+  busy: AnalysisMode | "";
+  readOnly: boolean;
+  onQuick: () => void;
+  onDeep: () => void;
+  onCancel: () => void;
+  onAdvanced: () => void;
+  onSavePrompt: (text: string, negative: string, language: "zh" | "en", variantKind?: "faithful" | "commercial" | "exploratory") => void;
+  onUsePrompt: (text: string) => void;
+  onSavePalette: () => void;
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  const result = record?.result;
+  const [language, setLanguage] = useState<"zh" | "en">("zh");
+  const [positive, setPositive] = useState("");
+  const [negative, setNegative] = useState("");
+  useEffect(() => {
+    if (!result) return;
+    setPositive(result.prompts.positive[language]);
+    setNegative(result.prompts.negative[language]);
+  }, [language, result]);
+  const running = Boolean(busy) || ["queued", "preparing", "analyzing"].includes(summary?.state ?? "");
+  if (!asset) return <section className="lf-stage"><div className="lf-empty-state"><ImagePlus size={28} /><h2>先选择一张产品或视觉素材</h2><p>Lensflow 会先在本机测量尺寸、比例和色卡，再发送一次结构化视觉分析请求。</p><button className="lf-button" onClick={onBack}>返回素材</button></div></section>;
+  return <section className="lf-stage lf-analysis-stage">
+    <div className="lf-section-heading"><div><span className="lf-kicker">产品优先 · 通用视觉回退</span><h1>分析产品并生成可编辑提示词</h1></div><div className="lf-heading-actions"><button className="lf-button" onClick={onAdvanced}><Settings size={16} />高级分析工具</button><button className="lf-button" disabled={readOnly || running} onClick={onDeep}><Sparkles size={16} />{busy === "deep" ? "深入分析中" : "深入分析"}</button></div></div>
+    <div className="lf-analysis-layout">
+      <div className="lf-analysis-source">
+        <div className="lf-analysis-image">{asset.dataUrl || asset.previewUrl ? <img src={asset.dataUrl || asset.previewUrl} alt={asset.name} /> : <FileImage size={32} />}</div>
+        <strong>{asset.name}</strong>
+        <LocalMeasurements asset={asset} />
+        {result?.measurements.palette.value?.length ? <div className="lf-palette-row" aria-label="本地测量色卡">{result.measurements.palette.value.map((color) => <span key={color.hex} title={`${color.hex} · ${Math.round(color.proportion * 100)}%`} style={{ background: color.hex }} />)}<button disabled={readOnly} onClick={onSavePalette}><Palette size={14} />保存为色卡参考</button></div> : null}
+      </div>
+      <div className="lf-analysis-content">
+        {!summary && !record ? <div className="lf-analysis-empty"><WandSparkles size={24} /><h2>一次请求完成快速解构</h2><p>返回内容分类、形态与 CMF、构图镜头、证据边界、双语提示词、三种变体和五轴建议。</p><button className="lf-button is-primary" disabled={readOnly} onClick={onQuick}><WandSparkles size={16} />开始快速分析</button></div> : null}
+        {running ? <div className="lf-analysis-progress" role="status"><RefreshCw className="is-spinning" /><div><strong>{summary?.state === "preparing" ? "正在准备本地证据" : (busy || summary?.mode) === "deep" ? "正在执行三段深入分析" : "正在执行一次结构化分析"}</strong><span>不会自动重试；中断后需由你明确重新发起。</span></div><button className="lf-button" onClick={onCancel}>取消</button></div> : null}
+        {summary && ["failed", "interrupted"].includes(summary.state) ? <div className="lf-analysis-error"><AlertTriangle size={18} /><div><strong>{summary.state === "interrupted" ? "分析已中断" : "分析未完成"}</strong><span>{summary.error}</span></div><button className="lf-button" disabled={readOnly} onClick={onQuick}>重新分析</button></div> : null}
+        {result ? <>
+          <div className="lf-analysis-status"><span className={`state-${record?.state}`}><ShieldCheck size={15} />{record?.state === "partial" ? "部分结果" : "分析完成"}</span><strong>{contentKindLabel(result.classification.kind)}</strong><small>{Math.round(result.classification.confidence * 100)}% · {result.classification.reason}</small></div>
+          <div className="lf-evidence-grid">
+            <EvidenceBlock label="主体与摘要" values={[result.summary, result.subject]} />
+            <EvidenceBlock label="形态结构" values={result.formStructure} />
+            <EvidenceBlock label="CMF" values={[...result.cmf.color, ...result.cmf.material, ...result.cmf.finish]} />
+            <EvidenceBlock label="画面呈现" values={[result.composition, result.camera, result.lighting, result.style]} />
+          </div>
+          <div className="lf-prompt-editor">
+            <div className="lf-tray-heading"><div><strong>双语提示词</strong><small>编辑会保存为新版本，不覆盖分析结果。</small></div><div className="lf-segment"><button className={language === "zh" ? "is-active" : ""} onClick={() => setLanguage("zh")}>中文</button><button className={language === "en" ? "is-active" : ""} onClick={() => setLanguage("en")}>English</button></div></div>
+            <label><span>正向提示词</span><textarea value={positive} onChange={(event) => setPositive(event.target.value)} /></label>
+            <label><span>负向提示词</span><textarea value={negative} onChange={(event) => setNegative(event.target.value)} /></label>
+            <div className="lf-prompt-actions"><button className="lf-button" onClick={() => void navigator.clipboard.writeText(positive)}><Copy size={15} />复制</button><button className="lf-button" disabled={readOnly || !positive.trim()} onClick={() => onSavePrompt(positive, negative, language)}><Save size={15} />收藏版本</button><button className="lf-button is-primary" disabled={!positive.trim()} onClick={() => onUsePrompt(positive)}>送入组合<ArrowRight size={15} /></button></div>
+          </div>
+          <div className="lf-variant-list"><strong>三种创作方向</strong>{result.variants.map((variant) => <div key={variant.kind}><span>{variant.label}</span><p>{variant.prompts.positive[language]}</p><button onClick={() => onUsePrompt(variant.prompts.positive[language])}>使用</button><button disabled={readOnly} onClick={() => onSavePrompt(variant.prompts.positive[language], variant.prompts.negative[language], language, variant.kind)}>收藏</button></div>)}</div>
+          <div className="lf-axis-suggestions"><strong>五轴关键词建议</strong>{AXIS_ORDER.map((axis) => <div key={axis}><span>{AXIS_LABELS[axis]}</span><p>{result.axisSuggestions[axis].join(" · ") || "未识别"}</p></div>)}</div>
+        </> : null}
+      </div>
+    </div>
+    <div className="lf-stage-footer"><button className="lf-button" onClick={onBack}>返回素材</button><span>快速分析固定一次请求；深入分析必须由你主动发起。</span><button className="lf-button is-primary" disabled={!result} onClick={onContinue}>进入组合<ChevronRight size={16} /></button></div>
+  </section>;
+}
+
+function LocalMeasurements({ asset }: { asset: AssetRecord }) {
+  const value = (name: string) => {
+    const field = asset.metadata[name];
+    return field && typeof field === "object" && "value" in field ? (field as { value?: unknown }).value : field;
+  };
+  return <dl className="lf-local-measurements"><div><dt>尺寸</dt><dd>{String(value("width") ?? "?")} × {String(value("height") ?? "?")}</dd></div><div><dt>比例</dt><dd>{String(value("aspectRatio") ?? "未知")}</dd></div><div><dt>证据</dt><dd><span className="evidence-measured">measured</span></dd></div></dl>;
+}
+
+function EvidenceBlock({ label, values }: { label: string; values: Array<{ value: string | null; source: "observed" | "inferred" | "unknown"; confidence?: number }> }) {
+  const shown = values.filter((item) => item.value);
+  return <section><strong>{label}</strong>{shown.length ? shown.map((item, index) => <p key={`${item.value}-${index}`}><span className={`evidence-${item.source}`}>{item.source}</span>{item.value}</p>) : <p><span className="evidence-unknown">unknown</span>未返回可验证内容</p>}</section>;
+}
+
+function contentKindLabel(kind: AnalysisRecord["result"] extends infer _ ? "product" | "person" | "scene" | "graphic" | "other" : never) {
+  return ({ product: "实体产品", person: "人物", scene: "场景", graphic: "平面内容", other: "其他内容" } as const)[kind];
+}
+
 const EMPTY_HAND: AxisHand = { style: null, subject: null, composition: null, color: null, motion: null };
 const EMPTY_SNAPSHOT: StudioSnapshot = {
   connectionState: "checking",
   connected: false,
   readOnly: true,
-  protocolVersion: 1,
+  protocolVersion: 2,
   extensionVersion: null,
   connectionMessage: "正在检测本机插件。",
   provider: null,
   capabilities: { ...UNKNOWN_CAPABILITIES },
   keywords: [],
+  analyses: [],
+  prompts: [],
   assets: [],
   references: [],
   batches: [],
@@ -101,6 +190,9 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
   const [reducedMotion, setReducedMotion] = useState(false);
   const [activeSection, setActiveSection] = useState(initialView);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [analysisRecord, setAnalysisRecord] = useState<AnalysisRecord | null>(null);
+  const [analysisBusy, setAnalysisBusy] = useState<AnalysisMode | "">("");
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const providerReturnRef = useRef<HTMLButtonElement>(null);
 
@@ -133,10 +225,10 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
       if (stored?.hand) setHand(stored.hand);
       if (stored?.tray) setTray(stored.tray);
       if (typeof stored?.body === "string") setBody(stored.body);
-      if (stored?.activeStep && stored.activeStep >= 1 && stored.activeStep <= 4) setActiveStep(stored.activeStep);
+      if (stored?.activeStep && stored.activeStep >= 1 && stored.activeStep <= 5) setActiveStep(stored.activeStep);
       if (stored?.selectedAssetId) setSelectedAssetId(stored.selectedAssetId);
       if (typeof handoff?.body === "string") setBody(handoff.body);
-      if (handoff?.activeStep && handoff.activeStep >= 1 && handoff.activeStep <= 4) setActiveStep(handoff.activeStep);
+      if (handoff?.activeStep && handoff.activeStep >= 1 && handoff.activeStep <= 5) setActiveStep(handoff.activeStep);
       if (handoff?.selectedAssetId) setSelectedAssetId(handoff.selectedAssetId);
       if (!sessionStorage.getItem("lensflow-session-id")) sessionStorage.setItem("lensflow-session-id", crypto.randomUUID());
     } catch { /* Ignore damaged per-tab session state. */ }
@@ -147,7 +239,9 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
   }, [activeStep, body, hand, selectedAssetId, tray]);
 
   const compiledPrompt = useMemo(() => compilePrompt(hand, [tray.map((card) => card.text).join("，"), body].filter(Boolean).join("，")), [body, hand, tray]);
-  const latestBatch = snapshot.batches[0] ?? null;
+  const latestBatch = snapshot.batches.find((batch) => batch.id === selectedBatchId) ?? snapshot.batches[0] ?? null;
+  const selectedAsset = snapshot.assets.find((asset) => asset.id === selectedAssetId) ?? null;
+  const selectedAnalysis = snapshot.analyses.find((analysis) => analysis.assetId === selectedAssetId) ?? null;
   const isSite = surface === "site";
   const writesDisabled = snapshot.readOnly || snapshot.connectionState !== "connected";
 
@@ -185,16 +279,68 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法打开插件 Provider 设置。"); }
   };
 
-  const openAnalysis = async () => {
+  const openAdvancedAnalysis = async () => {
     if (!selectedAssetId || writesDisabled) return;
     try { await runtime.openAnalysis(selectedAssetId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法打开图像解构。"); }
   };
 
+  useEffect(() => {
+    const handoff = snapshot.captureHandoff;
+    if (!handoff || sessionStorage.getItem("lensflow-last-capture-handoff") === handoff.createdAt) return;
+    sessionStorage.setItem("lensflow-last-capture-handoff", handoff.createdAt);
+    setSelectedAssetId(handoff.assetId);
+    setActiveSection("create");
+    setActiveStep(2);
+  }, [snapshot.captureHandoff]);
+
+  useEffect(() => {
+    if (!selectedAnalysis || !["ready", "partial"].includes(selectedAnalysis.state)) {
+      if (!selectedAnalysis) setAnalysisRecord(null);
+      return;
+    }
+    void runtime.getAnalysis(selectedAnalysis.id).then((record) => {
+      setAnalysisRecord(record);
+      const handoff = snapshot.captureHandoff;
+      if (handoff?.assetId === record.assetId && handoff.intent === "analyze-generate" && record.result) {
+        setBody(record.result.prompts.positive.zh);
+        setActiveStep(3);
+      }
+    }).catch((reason) => setError(reason instanceof Error ? reason.message : "无法读取分析结果"));
+  }, [runtime, selectedAnalysis?.id, selectedAnalysis?.state, snapshot.captureHandoff?.createdAt]);
+
+  const runAnalysis = async (mode: AnalysisMode) => {
+    if (!selectedAssetId || writesDisabled) return;
+    setAnalysisBusy(mode);
+    setError("");
+    try {
+      const record = await runtime.analyzeAsset(selectedAssetId, mode);
+      setAnalysisRecord(record);
+      await reload();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "分析失败");
+    } finally { setAnalysisBusy(""); }
+  };
+
+  const saveAnalysisPrompt = async (text: string, negativeText: string, language: "zh" | "en", variantKind?: "faithful" | "commercial" | "exploratory") => {
+    if (!analysisRecord?.result) return;
+    await runtime.savePrompt({
+      text,
+      negativeText,
+      language,
+      sourceAssetId: analysisRecord.assetId,
+      sourceAnalysisId: analysisRecord.id,
+      variantKind,
+      model: analysisRecord.model
+    });
+    await reload();
+  };
+
   const canOpenStep = (step: number) => {
     if (snapshot.readOnly) return true;
     if (step <= 2) return true;
-    if (step === 3) return Boolean(compiledPrompt);
+    if (step === 3) return Boolean(selectedAssetId || body || snapshot.keywords.length);
+    if (step === 4) return Boolean(compiledPrompt);
     return Boolean(latestBatch);
   };
 
@@ -203,8 +349,9 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
     setSubmitting(true);
     setError("");
     try {
-      await runtime.createBatch({ prompt: compiledPrompt, settings, referenceIds: snapshot.references.filter((item) => item.enabled).map((item) => item.id) });
-      setActiveStep(4);
+      const batch = await runtime.createBatch({ prompt: compiledPrompt, settings, referenceIds: snapshot.references.filter((item) => item.enabled).map((item) => item.id) });
+      setSelectedBatchId(batch.id);
+      setActiveStep(5);
       await reload();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "提交失败");
@@ -222,9 +369,10 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
     }
     setLoading(true);
     try {
-      await runtime.importCapture({ name: file.name, dataUrl: await fileToDataUrl(file), mimeType: file.type, size: file.size });
+      const asset = await runtime.importCapture({ name: file.name, dataUrl: await fileToDataUrl(file), mimeType: file.type, size: file.size });
       setActiveSection("create");
-      setActiveStep(1);
+      setSelectedAssetId(asset.id);
+      setActiveStep(2);
       await reload();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "图片导入失败");
@@ -250,7 +398,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
     <div className={`lf-app surface-${surface}`}>
       <header className="lf-topbar">
         <div className="lf-brand"><span className="lf-brand-mark">{logoUrl ? <img src={logoUrl} alt="" /> : <Boxes size={22} />}</span><strong>{title}</strong></div>
-        {surface !== "sidepanel" && <div className="lf-project"><span>人像创作</span><small>本地工作区</small></div>}
+        {surface !== "sidepanel" && <div className="lf-project"><span>产品分析与创作</span><small>本地工作区</small></div>}
         <div className={`lf-connection state-${snapshot.connectionState} ${snapshot.connected ? "is-online" : ""}`}><CircleDot size={14} />{connectionLabel(snapshot.connectionState)}</div>
         <nav className="lf-topnav" aria-label="工作区">
           <button className={activeSection === "create" ? "is-active" : ""} onClick={() => setActiveSection("create")}>创作</button>
@@ -281,9 +429,9 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
                 <button className="lf-write-action" disabled={writesDisabled} title={writesDisabled ? "连接桌面插件后可用" : undefined} onClick={() => uploadInputRef.current?.click()}><Upload size={18} /><span>上传图片</span></button>
               </div>
               <AssetList snapshot={snapshot} kind="capture" selectedId={selectedAssetId} onSelect={setSelectedAssetId} />
-              {selectedAssetId && <div className="lf-selected-actions"><strong>选中素材操作</strong><button disabled={writesDisabled} onClick={() => void openAnalysis()}><WandSparkles size={16} />图像解构</button><button disabled={writesDisabled} onClick={() => void openAnalysis()}><Sparkles size={16} />深度分析</button></div>}
+              {selectedAssetId && <div className="lf-selected-actions"><strong>选中素材操作</strong><button disabled={writesDisabled} onClick={() => setActiveStep(2)}><WandSparkles size={16} />产品分析</button><button disabled={writesDisabled || Boolean(analysisBusy)} onClick={() => void runAnalysis("deep")}><Sparkles size={16} />深入分析</button></div>}
             </Tabs.Content>
-            <Tabs.Content value="prompts"><KeywordLibrary keywords={snapshot.keywords} onDelete={async (id) => { await runtime.deleteKeyword(id); await reload(); }} /></Tabs.Content>
+            <Tabs.Content value="prompts"><PromptLibrary snapshot={snapshot} onDelete={async (id) => { await runtime.deleteKeyword(id); await reload(); }} onUse={(text) => { setBody(text); setActiveStep(3); }} /></Tabs.Content>
             <Tabs.Content value="references"><AssetList snapshot={snapshot} kind="reference" /></Tabs.Content>
             <Tabs.Content value="works"><AssetList snapshot={snapshot} kind="work" /></Tabs.Content>
           </Tabs.Root>
@@ -296,7 +444,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
         <main className="lf-main" id="create">
           {activeSection === "create" && <>
           <div className="lf-stepper" aria-label="创作步骤">
-            {["素材", "组合", "预检", "结果"].map((label, index) => { const step = index + 1; const reachable = canOpenStep(step); return <button key={label} disabled={!reachable} aria-current={activeStep === step ? "step" : undefined} className={activeStep === step ? "is-active" : activeStep > step ? "is-complete" : ""} onClick={() => setActiveStep(step)}><span>{activeStep > step ? <Check size={14} /> : step}</span>{label}</button>; })}
+            {["素材", "分析", "组合", "预检", "结果"].map((label, index) => { const step = index + 1; const reachable = canOpenStep(step); return <button key={label} disabled={!reachable} aria-current={activeStep === step ? "step" : undefined} className={activeStep === step ? "is-active" : activeStep > step ? "is-complete" : ""} onClick={() => setActiveStep(step)}><span>{activeStep > step ? <Check size={14} /> : step}</span>{label}</button>; })}
           </div>
 
           {loading ? <div className="lf-empty"><RefreshCw className="is-spinning" /><strong>正在读取本地工作区</strong></div> : null}
@@ -311,11 +459,30 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
                   <div className="lf-write-actions"><button className="lf-button is-primary" disabled={writesDisabled} onClick={() => void runtime.openCapture()}><FileImage size={16} />去网页捕捉</button><button className="lf-button" disabled={writesDisabled} onClick={() => uploadInputRef.current?.click()}><Upload size={16} />上传并解构</button><button className="lf-button" disabled={writesDisabled} onClick={openKeywordDialog}><Plus size={16} />创建关键词</button></div>
                 </div>
               ) : <AssetList snapshot={snapshot} selectedId={selectedAssetId} onSelect={setSelectedAssetId} />}
-              <div className="lf-stage-footer"><span>选择素材后进入组合，也可以直接从文字开始。</span><button className="lf-button is-primary" onClick={() => setActiveStep(2)}>进入组合<ChevronRight size={16} /></button></div>
+              <div className="lf-stage-footer"><span>选择图片后先完成本地测量与一次快速结构化分析。</span><button className="lf-button is-primary" disabled={!selectedAssetId && !snapshot.readOnly} onClick={() => setActiveStep(2)}>进入分析<ChevronRight size={16} /></button></div>
             </section>
           )}
 
           {!loading && activeStep === 2 && (
+            <AnalysisStage
+              asset={selectedAsset}
+              summary={selectedAnalysis}
+              record={analysisRecord}
+              busy={analysisBusy}
+              readOnly={writesDisabled}
+              onQuick={() => void runAnalysis("quick")}
+              onDeep={() => void runAnalysis("deep")}
+              onCancel={() => { const id = analysisRecord?.id || selectedAnalysis?.id; if (id) void runtime.cancelAnalysis(id).then(setAnalysisRecord); }}
+              onAdvanced={() => void openAdvancedAnalysis()}
+              onSavePrompt={(text, negative, language, variantKind) => void saveAnalysisPrompt(text, negative, language, variantKind)}
+              onUsePrompt={(text) => { setBody(text); setActiveStep(3); }}
+              onSavePalette={() => void addReference("palette")}
+              onBack={() => setActiveStep(1)}
+              onContinue={() => setActiveStep(3)}
+            />
+          )}
+
+          {!loading && activeStep === 3 && (
             <section className="lf-stage lf-composer">
               <div className="lf-section-heading"><div><span className="lf-kicker">五轴抽卡</span><h1>把灵感组合成可控提示词</h1></div><div className="lf-heading-actions"><button className="lf-button" disabled={writesDisabled} onClick={openKeywordDialog}><Plus size={16} />新增关键词</button><button className="lf-button" disabled={!snapshot.keywords.length} onClick={() => setHand((current) => drawHand(snapshot.keywords, current))}><Shuffle size={16} />全部重抽</button></div></div>
               {snapshot.keywords.length === 0 ? (
@@ -328,31 +495,37 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
               <label className="lf-prompt-field"><span>正文与补充要求</span><textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="描述主体、环境、镜头和需要保留的细节……" /></label>
               <div className="lf-prompt-preview"><span>最终提示词</span><p>{compiledPrompt || "提示词将在这里按风格、主体、构图、色彩、动态的顺序预览。"}</p></div>
               <ReferenceComposer snapshot={snapshot} selectedAssetId={selectedAssetId} onAdd={(kind) => void addReference(kind)} onToggle={async (id, enabled) => { await runtime.setReferenceEnabled?.(id, enabled); await reload(); }} onDelete={async (id) => { await runtime.deleteReference?.(id); await reload(); }} />
-              <div className="lf-stage-footer"><button className="lf-button" onClick={() => setActiveStep(1)}>返回素材</button><button className="lf-button is-primary" disabled={!compiledPrompt} onClick={() => setActiveStep(3)}>检查并提交<ChevronRight size={16} /></button></div>
+              <div className="lf-stage-footer"><button className="lf-button" onClick={() => setActiveStep(2)}>返回分析</button><button className="lf-button is-primary" disabled={!compiledPrompt} onClick={() => setActiveStep(4)}>检查并提交<ChevronRight size={16} /></button></div>
             </section>
           )}
 
-          {!loading && activeStep === 3 && (
-            <Preflight snapshot={snapshot} settings={settings} setSettings={setSettings} prompt={compiledPrompt} onConfigure={(trigger) => void openProvider(trigger)} onBack={() => setActiveStep(2)} onSubmit={() => void createBatch()} submitting={submitting} />
+          {!loading && activeStep === 4 && (
+            <Preflight snapshot={snapshot} settings={settings} setSettings={setSettings} prompt={compiledPrompt} onConfigure={(trigger) => void openProvider(trigger)} onBack={() => setActiveStep(3)} onSubmit={() => void createBatch()} submitting={submitting} />
           )}
 
-          {!loading && activeStep === 4 && (
+          {!loading && activeStep === 5 && (
             latestBatch ? <FanGallery
               batch={latestBatch}
               reducedMotion={reducedMotion}
               onRetryFailed={async () => { await runtime.retryFailed(latestBatch.id); await reload(); }}
               onSave={async (child) => { await runtime.saveWork(latestBatch.id, child.id); await reload(); }}
               onDownload={(child) => runtime.download(latestBatch.id, child?.id)}
+              onDownloadMany={(children) => runtime.downloadMany({ batchId: latestBatch.id, childIds: children.map((child) => child.id) })}
               onEagle={runtime.exportToEagle ? async (child) => { const result = await runtime.exportToEagle!(latestBatch.id, child.id); return `${result.libraryName} · ${result.itemCount} 项 · ${result.tags.length} 个标签已回读`; } : undefined}
+              onEagleMany={runtime.exportManyToEagle ? async (children) => { const results = await runtime.exportManyToEagle!({ batchId: latestBatch.id, childIds: children.map((child) => child.id) }); const last = results.at(-1); return `${last?.libraryName ?? "Eagle"} · 已导出 ${results.length} 项${last ? ` · 库内 ${last.itemCount} 项` : ""}`; } : undefined}
               onCancel={async () => { await runtime.cancelBatch(latestBatch.id); await reload(); }}
               canCancel={snapshot.capabilities.cancellation === "supported"}
               logoUrl={logoUrl}
             />
-              : <div className="lf-empty-state"><FolderHeart size={28} /><h2>还没有生成结果</h2><p>完成组合和预检后，结果会以卡池形式保存在本次会话画架。</p><button className="lf-button is-primary" onClick={() => setActiveStep(2)}>开始组合</button></div>
+              : <div className="lf-empty-state"><FolderHeart size={28} /><h2>还没有生成结果</h2><p>完成组合和预检后，结果会以卡池形式保存在本次会话画架。</p><button className="lf-button is-primary" onClick={() => setActiveStep(3)}>开始组合</button></div>
           )}
           </>}
           {activeSection === "collection" && <CollectionView snapshot={snapshot} />}
-          {activeSection === "history" && <HistoryView snapshot={snapshot} onOpenBatch={() => { setActiveSection("create"); setActiveStep(4); }} />}
+          {activeSection === "history" && <HistoryView
+            snapshot={snapshot}
+            onOpenBatch={(batchId) => { setSelectedBatchId(batchId); setActiveSection("create"); setActiveStep(5); }}
+            onOpenAnalysis={(assetId) => { setSelectedAssetId(assetId); setActiveSection("create"); setActiveStep(2); }}
+          />}
           {activeSection === "backup" && <BackupCenter runtime={runtime} onChanged={reload} />}
           {error && <div className="lf-error" role="alert">{error}</div>}
         </main>
@@ -379,23 +552,54 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
 
 function CollectionView({ snapshot }: { snapshot: StudioSnapshot }) {
   const works = snapshot.assets.filter((asset) => asset.kind === "work");
+  const palettes = snapshot.references.filter((reference) => reference.kind === "palette");
   return <section className="lf-secondary-view">
-    <div className="lf-section-heading"><div><span className="lf-kicker">本地作品集</span><h1>收藏与作品</h1></div><span>{works.length} 项</span></div>
-    {works.length ? <div className="lf-work-grid">{works.map((asset) => <article key={asset.id}>
-      <div>{asset.previewUrl || asset.dataUrl ? <img src={asset.previewUrl || asset.dataUrl} alt={asset.name} /> : <FolderHeart size={28} />}</div>
-      <strong>{asset.name}</strong><small>{asset.prompt || "未保存提示词"}</small>
-    </article>)}</div> : <div className="lf-empty-state"><FolderHeart size={28} /><h2>作品集还是空的</h2><p>生成结果会先进入历史。只有主动执行“收入作品集”后才会出现在这里。</p></div>}
+    <div className="lf-section-heading"><div><span className="lf-kicker">四类本地资产</span><h1>收藏与作品</h1></div><span>{snapshot.keywords.length + snapshot.prompts.length + palettes.length + works.length} 项</span></div>
+    <Tabs.Root defaultValue="keywords" className="lf-collection-tabs">
+      <Tabs.List className="lf-tabs" aria-label="收藏类型">
+        <Tabs.Trigger value="keywords">关键词 <span>{snapshot.keywords.length}</span></Tabs.Trigger>
+        <Tabs.Trigger value="prompts">提示词 <span>{snapshot.prompts.length}</span></Tabs.Trigger>
+        <Tabs.Trigger value="palettes">色卡 <span>{palettes.length}</span></Tabs.Trigger>
+        <Tabs.Trigger value="works">作品 <span>{works.length}</span></Tabs.Trigger>
+      </Tabs.List>
+      <Tabs.Content value="keywords">{snapshot.keywords.length ? <div className="lf-collection-list">{snapshot.keywords.map((item) => <article key={item.id}><span>{AXIS_LABELS[item.axis]}</span><strong>{item.text}</strong></article>)}</div> : <CollectionEmpty label="关键词" />}</Tabs.Content>
+      <Tabs.Content value="prompts">{snapshot.prompts.length ? <div className="lf-collection-list is-prompts">{snapshot.prompts.map((item) => <article key={item.id}><span>{item.language === "zh" ? "中文" : "English"}{item.variantKind ? ` · ${item.variantKind}` : ""}</span><strong>{item.text}</strong><small>{item.model || "未记录模型"}</small></article>)}</div> : <CollectionEmpty label="提示词" />}</Tabs.Content>
+      <Tabs.Content value="palettes">{palettes.length ? <div className="lf-work-grid">{palettes.map((item) => <article key={item.id}><div>{item.previewUrl || item.dataUrl ? <img src={item.previewUrl || item.dataUrl} alt={item.name} /> : <Palette size={28} />}</div><strong>{item.name}</strong><small>{item.enabled ? "当前启用" : "已保存"}</small></article>)}</div> : <CollectionEmpty label="色卡" />}</Tabs.Content>
+      <Tabs.Content value="works">{works.length ? <div className="lf-work-grid">{works.map((asset) => <article key={asset.id}>
+        <div>{asset.previewUrl || asset.dataUrl ? <img src={asset.previewUrl || asset.dataUrl} alt={asset.name} /> : <FolderHeart size={28} />}</div>
+        <strong>{asset.name}</strong><small>{asset.prompt || "未保存提示词"}</small>
+      </article>)}</div> : <CollectionEmpty label="作品" detail="生成结果会先进入历史，只有主动收入作品集后才会出现在这里。" />}</Tabs.Content>
+    </Tabs.Root>
   </section>;
 }
 
-function HistoryView({ snapshot, onOpenBatch }: { snapshot: StudioSnapshot; onOpenBatch: () => void }) {
+function CollectionEmpty({ label, detail }: { label: string; detail?: string }) {
+  return <div className="lf-empty-state"><FolderHeart size={28} /><h2>还没有{label}</h2><p>{detail || `从分析和创作流程中主动保存${label}后，会在这里集中管理。`}</p></div>;
+}
+
+function HistoryView({ snapshot, onOpenBatch, onOpenAnalysis }: { snapshot: StudioSnapshot; onOpenBatch: (batchId: string) => void; onOpenAnalysis: (assetId: string) => void }) {
+  const [taskType, setTaskType] = useState<"all" | "generation" | "analysis">("all");
+  const [state, setState] = useState("all");
+  const [previewBatchId, setPreviewBatchId] = useState(snapshot.batches[0]?.id ?? "");
+  const batches = snapshot.batches.filter((batch) => (taskType === "all" || taskType === "generation") && (state === "all" || batch.state === state));
+  const analyses = snapshot.analyses.filter((analysis) => (taskType === "all" || taskType === "analysis") && (state === "all" || analysis.state === state));
+  const previewBatch = snapshot.batches.find((batch) => batch.id === previewBatchId) ?? batches[0];
+  const previewReferences = previewBatch ? snapshot.references.filter((reference) => previewBatch.referenceIds.includes(reference.id)) : [];
   return <section className="lf-secondary-view">
-    <div className="lf-section-heading"><div><span className="lf-kicker">可恢复的本地记录</span><h1>历史与任务</h1></div><span>{snapshot.batches.length} 个批次</span></div>
+    <div className="lf-section-heading"><div><span className="lf-kicker">可恢复的本地记录</span><h1>历史与任务</h1></div><span>{snapshot.batches.length} 个批次 · {snapshot.analyses.length} 次分析</span></div>
+    <div className="lf-history-filters"><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as typeof taskType)}><option value="all">全部任务</option><option value="analysis">产品分析</option><option value="generation">图片生成</option></select></label><label>状态<select value={state} onChange={(event) => setState(event.target.value)}><option value="all">全部状态</option><option value="ready">已完成</option><option value="partial">部分完成</option><option value="generating">生成中</option><option value="failed">失败</option><option value="interrupted">已中断</option></select></label></div>
     <div className="lf-history-layout">
-      <div><h2>生成批次</h2>{snapshot.batches.length ? snapshot.batches.map((batch) => <button className="lf-history-row" key={batch.id} onClick={onOpenBatch}>
-        <span className={`state-${batch.state}`}><History size={17} /></span><div><strong>{batch.prompt}</strong><small>{batch.settings.model} · {batch.children.filter((child) => child.state === "ready").length}/{batch.children.length} 完成</small></div><em>{batch.state}</em>
-      </button>) : <p className="lf-muted-copy">暂无生成任务。</p>}</div>
-      <div><h2>最近事件</h2>{snapshot.historyEvents.length ? snapshot.historyEvents.map((event) => <div className="lf-event-row" key={event.id}><span /><div><strong>{event.message}</strong><small>{new Date(event.createdAt).toLocaleString("zh-CN")}</small></div></div>) : <p className="lf-muted-copy">暂无历史事件。</p>}</div>
+      <div><h2>任务记录</h2>
+        {batches.map((batch) => <div className={`lf-history-row ${previewBatch?.id === batch.id ? "is-selected" : ""}`} key={batch.id}>
+          <button className="lf-history-primary" onClick={() => setPreviewBatchId(batch.id)}><span className={`state-${batch.state}`}><History size={17} /></span><div><strong>{batch.prompt}</strong><small>{batch.settings.model} · {batch.children.filter((child) => child.state === "ready").length}/{batch.children.length} 完成</small></div><em>{batch.state}</em></button>
+          <button className="lf-history-open" onClick={() => onOpenBatch(batch.id)}>打开结果</button>
+        </div>)}
+        {analyses.map((analysis) => <div className="lf-history-row" key={analysis.id}><button className="lf-history-primary" onClick={() => onOpenAnalysis(analysis.assetId)}><span className={`state-${analysis.state}`}><WandSparkles size={17} /></span><div><strong>{analysis.summary || "产品分析"}</strong><small>{analysis.model} · {analysis.mode === "deep" ? "深入分析" : "快速分析"}</small></div><em>{analysis.state}</em></button><button className="lf-history-open" onClick={() => onOpenAnalysis(analysis.assetId)}>查看分析</button></div>)}
+        {!batches.length && !analyses.length ? <p className="lf-muted-copy">当前筛选条件下没有任务。</p> : null}
+      </div>
+      <div><h2>参考图与结果对比</h2>{previewBatch ? <div className="lf-history-compare"><section><strong>参考输入</strong><div>{previewReferences.length ? previewReferences.map((reference) => reference.previewUrl || reference.dataUrl ? <img key={reference.id} src={reference.previewUrl || reference.dataUrl} alt={reference.name} /> : null) : <span>本批次未使用参考图片</span>}</div></section><section><strong>生成结果</strong><div>{previewBatch.children.filter((child) => child.imageUrl || child.dataUrl).map((child) => <img key={child.id} src={child.imageUrl || child.dataUrl} alt={`结果 ${child.index + 1}`} />)}{!previewBatch.children.some((child) => child.imageUrl || child.dataUrl) ? <span>暂无可对比结果</span> : null}</div></section><button className="lf-button is-primary" onClick={() => onOpenBatch(previewBatch.id)}>打开批次并批量处理</button></div> : <p className="lf-muted-copy">选择生成批次后可并排核对参考图和结果。</p>}
+        <h2>最近事件</h2>{snapshot.historyEvents.slice(0, 20).length ? snapshot.historyEvents.slice(0, 20).map((event) => <div className="lf-event-row" key={event.id}><span /><div><strong>{event.message}</strong><small>{new Date(event.createdAt).toLocaleString("zh-CN")}</small></div></div>) : <p className="lf-muted-copy">暂无历史事件。</p>}
+      </div>
     </div>
   </section>;
 }
@@ -502,6 +706,15 @@ function referenceLabel(kind: ReferenceKind) {
 
 function KeywordLibrary({ keywords, onDelete }: { keywords: KeywordCard[]; onDelete: (id: string) => void }) {
   return <div className="lf-keyword-list">{keywords.length ? keywords.map((card) => <div key={card.id}><span>{AXIS_LABELS[card.axis]}</span><strong>{card.text}</strong><button onClick={() => onDelete(card.id)} aria-label={`删除 ${card.text}`}><Trash2 size={14} /></button></div>) : <p>暂无关键词</p>}</div>;
+}
+
+function PromptLibrary({ snapshot, onDelete, onUse }: { snapshot: StudioSnapshot; onDelete: (id: string) => void; onUse: (text: string) => void }) {
+  return <div className="lf-prompt-library">
+    <div className="lf-library-subheading"><strong>提示词册</strong><span>{snapshot.prompts.length}</span></div>
+    {snapshot.prompts.length ? snapshot.prompts.slice(0, 20).map((prompt) => <div className="lf-saved-prompt" key={prompt.id}><span>{prompt.language.toUpperCase()}{prompt.variantKind ? ` · ${prompt.variantKind}` : ""}</span><p>{prompt.text}</p><button onClick={() => onUse(prompt.text)}>使用</button></div>) : <p className="lf-muted-copy">暂无已收藏提示词</p>}
+    <div className="lf-library-subheading"><strong>五轴关键词</strong><span>{snapshot.keywords.length}</span></div>
+    <KeywordLibrary keywords={snapshot.keywords} onDelete={onDelete} />
+  </div>;
 }
 
 function StorageMeter({ snapshot }: { snapshot: StudioSnapshot }) {

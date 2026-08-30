@@ -1,5 +1,5 @@
 export const LENSFLOW_BACKUP_FORMAT = "lensflow-local-backup" as const;
-export const LENSFLOW_BACKUP_SCHEMA_VERSION = 1 as const;
+export const LENSFLOW_BACKUP_SCHEMA_VERSION = 2 as const;
 
 export type BackupImportMode = "merge" | "replace";
 export type HistoryRetentionDays = 30 | 90 | 180 | 365 | null;

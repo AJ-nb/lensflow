@@ -98,10 +98,16 @@ async function syncAnalysisToLensflow(record: AnalysisArchiveRecord): Promise<vo
     });
     await lensflowDatabase.analyses.put({
       id: record.id,
+      assetId: captureAssetId,
       captureId,
+      mode: "deep",
+      state: "partial",
+      providerId: "legacy",
       model: result.model,
-      result: result.analysis,
-      createdAt: result.generatedAt
+      rawResponse: result.analysis,
+      error: "旧高级分析已保留；运行 Lensflow 快速分析可生成 v2 双语提示词与证据字段。",
+      createdAt: result.generatedAt,
+      updatedAt: now
     });
     const assets: AssetRecord[] = [{
       id: captureAssetId,
@@ -133,7 +139,18 @@ async function syncAnalysisToLensflow(record: AnalysisArchiveRecord): Promise<vo
     }
     await lensflowDatabase.assets.bulkPut(assets);
     if (promptText) {
-      await lensflowDatabase.prompts.put({ id: promptId, text: promptText, kind: "prompt", createdAt: result.generatedAt, updatedAt: now });
+      await lensflowDatabase.prompts.put({
+        id: promptId,
+        text: promptText,
+        negativeText: reconstruction?.negativePrompt ?? "",
+        language: "zh",
+        sourceAssetId: captureAssetId,
+        sourceAnalysisId: record.id,
+        model: result.model,
+        kind: "prompt",
+        createdAt: result.generatedAt,
+        updatedAt: now
+      });
     }
     if (result.references?.length) {
       await lensflowDatabase.references.bulkPut(result.references.map((reference) => ({

@@ -1,4 +1,9 @@
-import type { BridgeRequest } from "@lensflow/contracts";
+import type { AnalysisRecord, BridgeRequest } from "@lensflow/contracts";
+
+export function analysisRecordForBridge(record: AnalysisRecord): AnalysisRecord {
+  const { rawResponse: _rawResponse, ...safe } = record;
+  return safe;
+}
 
 export class BridgeReplayGuard {
   private readonly seen = new Map<string, number>();

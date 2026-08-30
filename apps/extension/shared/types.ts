@@ -3,9 +3,12 @@ import type { VisualOverview } from "./visual-overview";
 import { isThemeId, type ThemeId, type ThemeMode } from "./themes";
 import type {
   BatchCreateInput,
+  AnalysisMode as ProductAnalysisMode,
+  BatchSelection,
   GenerationBatch,
   ProviderProfile,
   ProviderConnectionResult,
+  SavePromptInput,
   StudioSnapshot
 } from "@lensflow/contracts";
 
@@ -376,6 +379,12 @@ export type RuntimeRequest =
   | { type: "LENSFLOW_EXPORT_EAGLE"; batchId: string; childId: string }
   | { type: "LENSFLOW_OPEN_WORKSPACE"; hash?: string }
   | { type: "LENSFLOW_OPEN_ANALYSIS"; assetId: string }
+  | { type: "LENSFLOW_ANALYZE_ASSET"; assetId: string; mode: ProductAnalysisMode }
+  | { type: "LENSFLOW_GET_ANALYSIS"; analysisId: string }
+  | { type: "LENSFLOW_CANCEL_ANALYSIS"; analysisId: string }
+  | { type: "LENSFLOW_SAVE_PROMPT"; input: SavePromptInput }
+  | { type: "LENSFLOW_DOWNLOAD_MANY"; selection: BatchSelection }
+  | { type: "LENSFLOW_EXPORT_EAGLE_MANY"; selection: BatchSelection }
   | { type: "LENSFLOW_BRIDGE_RPC"; request: unknown };
 
 export type LensflowRuntimeData = StudioSnapshot | GenerationBatch | ProviderProfile | ProviderConnectionResult | unknown;

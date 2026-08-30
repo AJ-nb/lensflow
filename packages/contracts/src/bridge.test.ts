@@ -4,12 +4,13 @@ import {
   assertBridgePayloadSize,
   bridgeRequestSchema,
   isAllowedLensflowBridgeOrigin,
-  parseBridgePayload
+  parseBridgePayload,
+  type BridgeMethod
 } from "./bridge";
 
-function request(method: "task.cancel" | "asset.put" | "provider.open" | "analysis.open", payload: unknown) {
+function request(method: BridgeMethod, payload: unknown) {
   return bridgeRequestSchema.parse({
-    version: 1,
+    version: 2,
     id: "d4f8efb9-dcb8-46f1-a56c-498ff0a29b88",
     nonce: "1234567890abcdef",
     method,
@@ -43,5 +44,14 @@ describe("bridge security contract", () => {
     expect(() => parseBridgePayload(request("provider.open", { apiKey: "secret" }))).toThrow();
     expect(() => parseBridgePayload(request("analysis.open", { assetId: "asset-1", url: "https://example.com" }))).toThrow();
     expect(() => parseBridgePayload(request("analysis.open", { assetId: "asset-1", filePath: "C:/secret.png" }))).toThrow();
+  });
+
+  it("validates v2 analysis, prompt and Eagle methods without URL or secret fields", () => {
+    expect(parseBridgePayload(request("analysis.create", { assetId: "asset-1", mode: "quick" }))).toEqual({ assetId: "asset-1", mode: "quick" });
+    expect(parseBridgePayload(request("analysis.get", { analysisId: "analysis-1" }))).toEqual({ analysisId: "analysis-1" });
+    expect(parseBridgePayload(request("eagle.export", { batchId: "batch-1", childIds: ["child-1"] }))).toEqual({ batchId: "batch-1", childIds: ["child-1"] });
+    expect(() => parseBridgePayload(request("analysis.create", { assetId: "asset-1", mode: "fast" }))).toThrow();
+    expect(() => parseBridgePayload(request("analysis.create", { assetId: "asset-1", mode: "quick", url: "https://example.com" }))).toThrow();
+    expect(() => parseBridgePayload(request("prompt.save", { text: "x", negativeText: "", language: "zh", token: "secret" }))).toThrow("禁止字段");
   });
 });

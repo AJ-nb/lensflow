@@ -15,12 +15,12 @@ export interface LocalImageMeasurement {
 
 export async function measureImageDataUrl(dataUrl: string): Promise<LocalImageMeasurement> {
   const blob = dataUrlToBlob(dataUrl);
-  const [sha256, image] = await Promise.all([sha256Blob(blob), loadImage(dataUrl)]);
-  const palette = measurePalette(image);
+  const [sha256, image] = await Promise.all([sha256Blob(blob), loadImage(dataUrl, blob)]);
+  const palette = measurePalette(image.source, image.width, image.height);
   return {
-    width: { value: image.naturalWidth, source: "measured" },
-    height: { value: image.naturalHeight, source: "measured" },
-    aspectRatio: { value: ratioLabel(image.naturalWidth, image.naturalHeight), source: "measured" },
+    width: { value: image.width, source: "measured" },
+    height: { value: image.height, source: "measured" },
+    aspectRatio: { value: ratioLabel(image.width, image.height), source: "measured" },
     sha256: { value: sha256, source: "measured" },
     palette: { value: palette, source: "measured" }
   };
@@ -42,27 +42,30 @@ async function sha256Blob(blob: Blob): Promise<string> {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-function loadImage(dataUrl: string): Promise<HTMLImageElement> {
+function loadImage(dataUrl: string, blob: Blob): Promise<{ source: CanvasImageSource; width: number; height: number }> {
+  if (typeof Image === "undefined" && typeof createImageBitmap === "function") {
+    return createImageBitmap(blob).then((bitmap) => ({ source: bitmap, width: bitmap.width, height: bitmap.height }));
+  }
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => {
       if (image.naturalWidth < 1 || image.naturalHeight < 1) reject(new Error("图片尺寸无效。"));
-      else resolve(image);
+      else resolve({ source: image, width: image.naturalWidth, height: image.naturalHeight });
     };
     image.onerror = () => reject(new Error("无法读取图片像素。"));
     image.src = dataUrl;
   });
 }
 
-function measurePalette(image: HTMLImageElement): MeasuredPaletteColor[] {
-  const longest = Math.max(image.naturalWidth, image.naturalHeight);
+function measurePalette(image: CanvasImageSource, sourceWidth: number, sourceHeight: number): MeasuredPaletteColor[] {
+  const longest = Math.max(sourceWidth, sourceHeight);
   const scale = Math.min(1, 72 / longest);
-  const width = Math.max(1, Math.round(image.naturalWidth * scale));
-  const height = Math.max(1, Math.round(image.naturalHeight * scale));
-  const canvas = document.createElement("canvas");
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+  const canvas = typeof document !== "undefined" ? document.createElement("canvas") : new OffscreenCanvas(width, height);
   canvas.width = width;
   canvas.height = height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const context = canvas.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
   if (!context) throw new Error("浏览器无法创建本地测色画布。");
   context.drawImage(image, 0, 0, width, height);
   const pixels = context.getImageData(0, 0, width, height).data;
