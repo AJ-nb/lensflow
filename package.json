@@ -27,7 +27,7 @@
     "@playwright/test": "^1.55.0",
     "@types/node": "^24.0.0",
     "fake-indexeddb": "^6.2.5",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
   "engines": {
