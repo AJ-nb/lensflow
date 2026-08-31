@@ -133,6 +133,34 @@ async function installBridgeMock(page: Page, initialSnapshot: ReturnType<typeof 
   }, { initialSnapshot, incompatible, mockAnalysis: analysisRecord() });
 }
 
+function publishedManifest(version: string, channel: "stable" | "beta" = "stable") {
+  return {
+    schemaVersion: 2,
+    status: "published",
+    version,
+    channel,
+    publishedAt: now,
+    minimumChrome: "122",
+    bridgeProtocol: 2,
+    dataVersion: 2,
+    minimumDataVersion: 1,
+    migration: { required: false, backupRecommended: true },
+    artifacts: [{ browser: "chrome", distribution: "github-zip", url: `https://example.com/lensflow-${version}.zip`, sizeBytes: 1024, sha256: "a".repeat(64) }],
+    notesUrl: `https://example.com/releases/${version}`
+  };
+}
+
+async function installBlockedHomepageBridge(page: Page) {
+  await page.addInitScript(() => {
+    window.addEventListener("message", (event) => {
+      if (event.source !== window || event.data?.type !== "LENSFLOW_BRIDGE_CONNECT") return;
+      const channel = new MessageChannel();
+      channel.port1.start();
+      window.postMessage({ type: "LENSFLOW_BRIDGE_CONNECTED", nonce: event.data.nonce, version: 2 }, location.origin, [channel.port2]);
+    });
+  });
+}
+
 test("all public routes render", async ({ request }) => {
   for (const path of ["./", "product", "studio", "docs/", "download", "changelog", "privacy"]) {
     const response = await request.get(path);
@@ -163,10 +191,55 @@ test("homepage negotiates the current bridge protocol", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => (window as unknown as { __lensflowBridgeMethods: string[] }).__lensflowBridgeMethods)).toContain("version.get");
 });
 
+test("homepage offers installation when no extension responds", async ({ page }) => {
+  await page.goto("./");
+  await expect(page.getByRole("link", { name: "安装 Lensflow" }).first()).toBeVisible();
+});
+
+test("homepage offers a newer stable release to an older extension", async ({ page }) => {
+  await page.route("**/latest.json", (route) => route.fulfill({ json: publishedManifest("0.3.0") }));
+  await installBridgeMock(page, snapshot());
+  await page.goto("./");
+  const cta = page.getByRole("link", { name: "更新至 v0.3.0" }).first();
+  await expect(cta).toBeVisible();
+  await expect(cta).toHaveAttribute("data-install-state", "update");
+});
+
+test("homepage distinguishes protocol incompatibility from a missing extension", async ({ page }) => {
+  await page.route("**/latest.json", (route) => route.fulfill({ json: publishedManifest("0.3.0") }));
+  await installBridgeMock(page, snapshot(), true);
+  await page.goto("./");
+  await expect(page.locator("[data-install-cta]").first()).toHaveAttribute("data-install-state", "incompatible");
+});
+
+test("homepage keeps an installed extension usable when the stable feed is offline", async ({ page }) => {
+  await page.route("**/latest.json", (route) => route.abort("failed"));
+  await installBridgeMock(page, snapshot());
+  await page.goto("./");
+  const cta = page.getByRole("link", { name: "进入创作空间" }).first();
+  await expect(cta).toHaveAttribute("data-release-state", "offline");
+});
+
+test("homepage ignores a beta manifest on the stable update path", async ({ page }) => {
+  await page.route("**/latest.json", (route) => route.fulfill({ json: publishedManifest("9.0.0-beta.1", "beta") }));
+  await installBridgeMock(page, snapshot());
+  await page.goto("./");
+  await expect(page.getByRole("link", { name: "进入创作空间" }).first()).toBeVisible();
+  await expect(page.getByText(/更新至 v9/)).toHaveCount(0);
+});
+
+test("homepage reports a connected bridge that does not answer RPC", async ({ page }) => {
+  await installBlockedHomepageBridge(page);
+  await page.goto("./");
+  const cta = page.getByRole("link", { name: "重新连接插件" }).first();
+  await expect(cta).toBeVisible();
+  await expect(cta).toHaveAttribute("data-install-state", "blocked");
+});
+
 test("homepage does not offer an update to an incompatible current release", async ({ page }) => {
   await installBridgeMock(page, snapshot(), true);
   await page.goto("./");
-  await expect(page.getByRole("link", { name: "安装 Lensflow" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "解决协议不兼容" }).first()).toBeVisible();
   await expect(page.getByText("更新至 v0.1.0")).toHaveCount(0);
 });
 
@@ -319,6 +392,43 @@ test("mobile result view exposes downloads but sends no write RPC", async ({ pag
   const methods = await page.evaluate(() => (window as unknown as { __lensflowBridgeMethods: string[] }).__lensflowBridgeMethods);
   expect(methods).toContain("download");
   expect(methods.filter((method) => ["asset.put", "asset.delete", "task.create", "task.cancel", "task.retryFailed", "analysis.create", "analysis.cancel", "prompt.save", "eagle.export"].includes(method))).toEqual([]);
+});
+
+test("offline demo loads original precomputed content with zero bridge or Provider requests", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__lensflowDemoBridgeAttempts", { value: [], writable: false });
+    window.addEventListener("message", (event) => {
+      if (event.data?.type === "LENSFLOW_BRIDGE_CONNECT") (window as unknown as { __lensflowDemoBridgeAttempts: unknown[] }).__lensflowDemoBridgeAttempts.push(event.data);
+    });
+  });
+  await page.goto("studio?demo=1");
+  await expect(page.getByText(/原创离线示例/)).toBeVisible();
+  await expect(page.getByText(/首次创作 2\/5/)).toBeVisible();
+  await expect(page.locator("#create").getByText("原创拱形桌灯.webp")).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __lensflowDemoBridgeAttempts: unknown[] }).__lensflowDemoBridgeAttempts)).toEqual([]);
+  await page.getByRole("button", { name: /进入分析/ }).click();
+  await expect(page.getByRole("heading", { name: "分析产品并生成可编辑提示词" })).toBeVisible();
+  await page.getByRole("button", { name: /送入组合/ }).click();
+  await page.getByRole("button", { name: /检查并提交/ }).click();
+  await expect(page.getByText(/首次创作 3\/5/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /生成 4 张/ })).toBeDisabled();
+});
+
+test("onboarding can be skipped, disabled, restored and resumed after refresh", async ({ page }) => {
+  await installBridgeMock(page, snapshot());
+  await page.goto("studio");
+  await expect(page.getByText(/首次创作 0\/5/)).toBeVisible();
+  await page.getByRole("button", { name: "跳过" }).click();
+  await expect(page.getByRole("region", { name: "新手引导" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("region", { name: "新手引导" })).toHaveCount(0);
+  await page.getByRole("button", { name: "新手引导" }).click();
+  await expect(page.getByText(/首次创作 0\/5/)).toBeVisible();
+  await page.getByRole("button", { name: "不再显示" }).click();
+  await page.reload();
+  await expect(page.getByRole("region", { name: "新手引导" })).toHaveCount(0);
+  await page.getByRole("button", { name: "新手引导" }).click();
+  await expect(page.getByRole("checkbox", { name: "新手模式" })).toBeChecked();
 });
 
 test("desktop and zoom-equivalent layouts avoid horizontal overflow", async ({ page }) => {

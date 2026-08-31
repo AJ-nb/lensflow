@@ -1,6 +1,10 @@
 {
+  "schemaVersion": 2,
   "status": "unreleased",
-  "plannedVersion": "0.2.1",
+  "plannedVersion": "0.3.0",
+  "channel": "stable",
   "minimumChrome": "122",
-  "bridgeProtocol": 2
+  "bridgeProtocol": 2,
+  "dataVersion": 2,
+  "minimumDataVersion": 1
 }

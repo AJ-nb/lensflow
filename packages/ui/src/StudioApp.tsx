@@ -9,6 +9,7 @@ import {
   Boxes,
   Check,
   ChevronRight,
+  CircleHelp,
   CircleDot,
   CloudOff,
   DatabaseBackup,
@@ -54,12 +55,15 @@ import {
   type GenerationSettings,
   type KeywordCard,
   type MaintenanceSummary,
+  type OnboardingState,
+  type OnboardingStep,
   type ReferenceKind,
   type StudioRuntime,
   type StudioSnapshot
 } from "@lensflow/contracts";
-import { compilePrompt, drawAxis, drawHand, normalizeReferences, validateKeywordInput } from "@lensflow/core";
+import { completeOnboardingStep, compilePrompt, createOnboardingState, drawAxis, drawHand, normalizeReferences, parseOnboardingState, setOnboardingMode, validateKeywordInput } from "@lensflow/core";
 import { FanGallery } from "./FanGallery";
+import { OnboardingGuide } from "./OnboardingGuide";
 import type { ProviderDialogProps } from "./ProviderDialog";
 
 export interface StudioAppProps {
@@ -153,6 +157,7 @@ function contentKindLabel(kind: AnalysisRecord["result"] extends infer _ ? "prod
 }
 
 const EMPTY_HAND: AxisHand = { style: null, subject: null, composition: null, color: null, motion: null };
+const ONBOARDING_STORAGE_KEY = "lensflow-onboarding-v1";
 const EMPTY_SNAPSHOT: StudioSnapshot = {
   connectionState: "checking",
   connected: false,
@@ -193,13 +198,32 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [analysisRecord, setAnalysisRecord] = useState<AnalysisRecord | null>(null);
   const [analysisBusy, setAnalysisBusy] = useState<AnalysisMode | "">("");
+  const [onboarding, setOnboarding] = useState<OnboardingState | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const providerReturnRef = useRef<HTMLButtonElement>(null);
+
+  const persistOnboarding = useCallback((next: OnboardingState) => {
+    setOnboarding(next);
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(next));
+  }, []);
+
+  const completeGuideStep = useCallback((step: OnboardingStep) => {
+    setOnboarding((current) => {
+      const next = completeOnboardingStep(current ?? createOnboardingState(), step);
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const changeGuideMode = useCallback((mode: OnboardingState["mode"]) => {
+    persistOnboarding(setOnboardingMode(onboarding ?? createOnboardingState(), mode));
+  }, [onboarding, persistOnboarding]);
 
   const reload = useCallback(async () => {
     try {
       const next = await runtime.load();
       setSnapshot(next);
+      setSelectedAssetId((current) => current || next.assets[0]?.id || null);
       setSettings((current) => ({ ...current, model: current.model || next.provider?.imageModel || "" }));
       setError("");
     } catch (reason) {
@@ -219,6 +243,15 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
 
   useEffect(() => {
     try {
+      const stored = JSON.parse(localStorage.getItem(ONBOARDING_STORAGE_KEY) || "null");
+      setOnboarding(parseOnboardingState(stored));
+    } catch {
+      setOnboarding(createOnboardingState());
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
       const stored = JSON.parse(sessionStorage.getItem("lensflow-composer-session") || "null") as { hand?: AxisHand; tray?: KeywordCard[]; body?: string; activeStep?: number; selectedAssetId?: string | null } | null;
       const handoff = JSON.parse(sessionStorage.getItem("lensflow-studio-handoff") || "null") as { body?: string; activeStep?: number; selectedAssetId?: string } | null;
       sessionStorage.removeItem("lensflow-studio-handoff");
@@ -235,6 +268,10 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
   }, []);
 
   useEffect(() => {
+    if (selectedAssetId) completeGuideStep("asset");
+  }, [completeGuideStep, selectedAssetId]);
+
+  useEffect(() => {
     sessionStorage.setItem("lensflow-composer-session", JSON.stringify({ hand, tray, body, activeStep, selectedAssetId }));
   }, [activeStep, body, hand, selectedAssetId, tray]);
 
@@ -244,6 +281,10 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
   const selectedAnalysis = snapshot.analyses.find((analysis) => analysis.assetId === selectedAssetId) ?? null;
   const isSite = surface === "site";
   const writesDisabled = snapshot.readOnly || snapshot.connectionState !== "connected";
+
+  useEffect(() => {
+    if (selectedAnalysis && ["ready", "partial"].includes(selectedAnalysis.state)) completeGuideStep("analysis");
+  }, [completeGuideStep, selectedAnalysis?.id, selectedAnalysis?.state]);
 
   const drawOne = (axis: AxisName) => setHand((current) => ({ ...current, [axis]: drawAxis(axis, snapshot.keywords, current[axis]) }));
   const toggleLock = (axis: AxisName) => setHand((current) => current[axis] ? ({ ...current, [axis]: { ...current[axis]!, locked: !current[axis]!.locked } }) : current);
@@ -346,6 +387,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
 
   const createBatch = async () => {
     if (!compiledPrompt || !settings.model || snapshot.readOnly) return;
+    completeGuideStep("preflight");
     setSubmitting(true);
     setError("");
     try {
@@ -356,6 +398,12 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "提交失败");
     } finally { setSubmitting(false); }
+  };
+
+  const enterPreflight = () => {
+    if (!compiledPrompt) return;
+    completeGuideStep("composition");
+    setActiveStep(4);
   };
 
   const importCapture = async (file: File) => {
@@ -399,13 +447,15 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
       <header className="lf-topbar">
         <div className="lf-brand"><span className="lf-brand-mark">{logoUrl ? <img src={logoUrl} alt="" /> : <Boxes size={22} />}</span><strong>{title}</strong></div>
         {surface !== "sidepanel" && <div className="lf-project"><span>产品分析与创作</span><small>本地工作区</small></div>}
-        <div className={`lf-connection state-${snapshot.connectionState} ${snapshot.connected ? "is-online" : ""}`}><CircleDot size={14} />{connectionLabel(snapshot.connectionState)}</div>
+        <div className={`lf-connection state-${snapshot.connectionState} ${snapshot.connected || snapshot.demoMode ? "is-online" : ""}`}><CircleDot size={14} />{snapshot.demoMode ? "离线示例" : connectionLabel(snapshot.connectionState)}</div>
         <nav className="lf-topnav" aria-label="工作区">
           <button className={activeSection === "create" ? "is-active" : ""} onClick={() => setActiveSection("create")}>创作</button>
           <button className={activeSection === "collection" ? "is-active" : ""} onClick={() => setActiveSection("collection")}>收藏</button>
           <button className={activeSection === "history" ? "is-active" : ""} onClick={() => setActiveSection("history")}>历史</button>
         </nav>
         <button className="lf-icon-button lf-provider-trigger" type="button" onClick={(event) => void openProvider(event.currentTarget)} aria-label="Provider 设置"><Settings size={19} /></button>
+        {snapshot.updateNotice?.status === "available" && <a className="lf-update-badge" href={snapshot.updateNotice.url || "https://aj-nb.github.io/lensflow/download"} target="_blank" rel="noreferrer">v{snapshot.updateNotice.latestVersion} 可更新</a>}
+        <button className="lf-icon-button lf-help-trigger" type="button" onClick={() => { changeGuideMode("active"); setActiveSection("create"); }} aria-label="新手引导"><CircleHelp size={19} /></button>
       </header>
 
       {snapshot.connectionState !== "connected" && surface === "site" && (
@@ -417,6 +467,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
         </div>
       )}
       {surface === "site" && <div className="lf-mobile-readonly"><AlertTriangle size={16} /><span>移动端仅提供只读预览；完整创作请使用桌面 Chrome 与 Lensflow 插件。</span></div>}
+      {snapshot.demoMode && <div className="lf-demo-notice"><ShieldCheck size={16} /><span>原创离线示例：图片、分析与结果均已预计算，不连接插件、不发 API 请求。</span><a href="/lensflow/studio">退出示例</a></div>}
 
       <div className="lf-workspace">
         <aside className="lf-library" aria-label="资产库">
@@ -446,6 +497,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
           <div className="lf-stepper" aria-label="创作步骤">
             {["素材", "分析", "组合", "预检", "结果"].map((label, index) => { const step = index + 1; const reachable = canOpenStep(step); return <button key={label} disabled={!reachable} aria-current={activeStep === step ? "step" : undefined} className={activeStep === step ? "is-active" : activeStep > step ? "is-complete" : ""} onClick={() => setActiveStep(step)}><span>{activeStep > step ? <Check size={14} /> : step}</span>{label}</button>; })}
           </div>
+          {onboarding && <OnboardingGuide state={onboarding} onModeChange={changeGuideMode} onJump={(step) => { setActiveSection("create"); setActiveStep(step); }} />}
 
           {loading ? <div className="lf-empty"><RefreshCw className="is-spinning" /><strong>正在读取本地工作区</strong></div> : null}
           {!loading && activeStep === 1 && (
@@ -455,7 +507,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
                 <div className="lf-empty-state">
                   <div className="lf-empty-icon"><ImagePlus size={26} /></div>
                   <h2>本机还没有创作素材</h2>
-                  <p>Lensflow 不内置演示素材。捕捉网页图片、上传自己的图片，或先创建关键词。</p>
+                  <p>真实工作区不会自动写入示例。捕捉网页图片、上传自己的图片，或先创建关键词。</p>
                   <div className="lf-write-actions"><button className="lf-button is-primary" disabled={writesDisabled} onClick={() => void runtime.openCapture()}><FileImage size={16} />去网页捕捉</button><button className="lf-button" disabled={writesDisabled} onClick={() => uploadInputRef.current?.click()}><Upload size={16} />上传并解构</button><button className="lf-button" disabled={writesDisabled} onClick={openKeywordDialog}><Plus size={16} />创建关键词</button></div>
                 </div>
               ) : <AssetList snapshot={snapshot} selectedId={selectedAssetId} onSelect={setSelectedAssetId} />}
@@ -495,7 +547,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
               <label className="lf-prompt-field"><span>正文与补充要求</span><textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="描述主体、环境、镜头和需要保留的细节……" /></label>
               <div className="lf-prompt-preview"><span>最终提示词</span><p>{compiledPrompt || "提示词将在这里按风格、主体、构图、色彩、动态的顺序预览。"}</p></div>
               <ReferenceComposer snapshot={snapshot} selectedAssetId={selectedAssetId} onAdd={(kind) => void addReference(kind)} onToggle={async (id, enabled) => { await runtime.setReferenceEnabled?.(id, enabled); await reload(); }} onDelete={async (id) => { await runtime.deleteReference?.(id); await reload(); }} />
-              <div className="lf-stage-footer"><button className="lf-button" onClick={() => setActiveStep(2)}>返回分析</button><button className="lf-button is-primary" disabled={!compiledPrompt} onClick={() => setActiveStep(4)}>检查并提交<ChevronRight size={16} /></button></div>
+              <div className="lf-stage-footer"><button className="lf-button" onClick={() => setActiveStep(2)}>返回分析</button><button className="lf-button is-primary" disabled={!compiledPrompt} onClick={enterPreflight}>检查并提交<ChevronRight size={16} /></button></div>
             </section>
           )}
 
@@ -517,6 +569,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
               onCancel={async () => { await runtime.cancelBatch(latestBatch.id); await reload(); }}
               canCancel={snapshot.capabilities.cancellation === "supported"}
               logoUrl={logoUrl}
+              onReveal={() => completeGuideStep("result")}
             />
               : <div className="lf-empty-state"><FolderHeart size={28} /><h2>还没有生成结果</h2><p>完成组合和预检后，结果会以卡池形式保存在本次会话画架。</p><button className="lf-button is-primary" onClick={() => setActiveStep(3)}>开始组合</button></div>
           )}

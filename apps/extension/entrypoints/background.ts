@@ -3,6 +3,7 @@ import { normalizeApiBaseUrl } from "../shared/api-models";
 import { STORAGE_KEYS } from "../shared/storage";
 import { captureSourceForStudio, handleLensflowRequest, migrateLegacyProviderSettings, resumeRemoteTasks } from "../lensflow/background-service";
 import { planLegacySettingsPersistence } from "../lensflow/legacy-provider-migration";
+import { checkManualUpdate, isChromeWebStoreInstall } from "../lensflow/release-update";
 import {
   CURRENT_SETTINGS_VERSION,
   DEFAULT_SETTINGS,
@@ -18,6 +19,7 @@ export default defineBackground(() => {
   const sidePanelPorts = new Set<Browser.runtime.Port>();
   let activePickerTabId: number | undefined;
   void migrateLegacyProviderSettings().catch((error) => console.warn("[Lensflow] 旧 Provider 密钥迁移失败", error));
+  void maybeCheckManualRelease();
 
   browser.runtime.onInstalled.addListener(async () => {
     await browser.contextMenus.removeAll();
@@ -38,6 +40,7 @@ export default defineBackground(() => {
     });
     await browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
     await browser.alarms.create("lensflow-remote-poll", { periodInMinutes: 1 });
+    await browser.alarms.create("lensflow-release-check", { periodInMinutes: 24 * 60 });
     const stored = await browser.storage.local.get(STORAGE_KEYS.settings);
     if (!stored[STORAGE_KEYS.settings]) {
       await browser.storage.local.set({ [STORAGE_KEYS.settings]: DEFAULT_SETTINGS });
@@ -68,6 +71,7 @@ export default defineBackground(() => {
 
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === "lensflow-remote-poll") void resumeRemoteTasks();
+    if (alarm.name === "lensflow-release-check") void maybeCheckManualRelease();
   });
 
   void resumeRemoteTasks();
@@ -127,6 +131,17 @@ export default defineBackground(() => {
     }
   }
 });
+
+async function maybeCheckManualRelease(): Promise<void> {
+  const manifest = browser.runtime.getManifest();
+  if (isChromeWebStoreInstall(manifest.update_url)) return;
+  const stored = await browser.storage.local.get(STORAGE_KEYS.releaseUpdateNotice);
+  const notice = await checkManualUpdate({
+    currentVersion: manifest.version,
+    previous: stored[STORAGE_KEYS.releaseUpdateNotice]
+  });
+  await browser.storage.local.set({ [STORAGE_KEYS.releaseUpdateNotice]: notice });
+}
 
 async function respondToRuntimeRequest(
   request: RuntimeRequest,

@@ -3,6 +3,7 @@ import {
   assertBridgePayloadSize,
   bridgeRequestSchema,
   parseBridgePayload,
+  releaseUpdateNoticeSchema,
   generationSettingsSchema,
   providerProfileSchema,
   savePromptInputSchema,
@@ -147,7 +148,7 @@ async function fetchSourceDataUrl(url?: string): Promise<string | undefined> {
 export async function handleLensflowRequest(request: RuntimeRequest): Promise<unknown> {
   switch (request.type) {
     case "LENSFLOW_SNAPSHOT":
-      return readStudioSnapshot(db, true, false, browser.runtime.getManifest().version);
+      return readLiveStudioSnapshot();
     case "LENSFLOW_SAVE_PROVIDER":
       return saveProvider(request.profile, request.secret);
     case "LENSFLOW_LIST_MODELS":
@@ -739,7 +740,7 @@ async function routeBridgeMethod(request: BridgeRequest, payload: unknown): Prom
     case "version.get":
       return { version: LENSFLOW_BRIDGE_VERSION, extensionVersion: browser.runtime.getManifest().version };
     case "snapshot.get":
-      return readStudioSnapshot(db, true, false, browser.runtime.getManifest().version);
+      return readLiveStudioSnapshot();
     case "task.create":
       return createBatch(payload as Parameters<typeof createBatch>[0]);
     case "task.cancel":
@@ -830,6 +831,15 @@ async function routeBridgeMethod(request: BridgeRequest, payload: unknown): Prom
     case "task.subscribe":
       return { subscribed: true };
   }
+}
+
+async function readLiveStudioSnapshot() {
+  const [snapshot, stored] = await Promise.all([
+    readStudioSnapshot(db, true, false, browser.runtime.getManifest().version),
+    browser.storage.local.get(STORAGE_KEYS.releaseUpdateNotice)
+  ]);
+  const parsed = releaseUpdateNoticeSchema.safeParse(stored[STORAGE_KEYS.releaseUpdateNotice]);
+  return { ...snapshot, updateNotice: parsed.success ? parsed.data : null };
 }
 
 async function notifyChanged(): Promise<void> {

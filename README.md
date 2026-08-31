@@ -10,7 +10,7 @@
 4. 以 1-10 张持久化批次生成；成功项不会因部分失败丢失，失败位置只能由用户手动补全。
 5. 在扇形卡池中揭示、下载、收入作品集或主动导出到 Eagle。
 
-Lensflow 不内置演示素材、模板、关键词或模型目录。模型始终来自认证后的 `${baseUrl}/models`。
+真实工作区不会自动写入演示素材、模板、关键词或模型目录。网站提供一个原创、临时、只读的离线示例；它不写入用户资产、不连接扩展、不读取密钥，也不调用 Provider。模型始终来自认证后的 `${baseUrl}/models`。
 
 ## Monorepo
 
@@ -46,6 +46,8 @@ npm run dev:extension
 npm run zip
 ```
 
+可在本地网站打开 `/studio?demo=1` 演练五步工作流。该示例使用预计算分析与原创 WebP，生成按钮保持禁用，下载操作仍可用。
+
 真实 API 测试默认关闭。只有显式设置 `LENSFLOW_REAL_API=1` 才可读取本机测试密钥；付费烟测还必须设置 `LENSFLOW_BILLABLE_SMOKE=1`，每项最多一次且不自动重试。
 
 ## 数据与权限
@@ -53,6 +55,24 @@ npm run zip
 Dexie 数据库包含 `captures`、`analyses`、`prompts`、`references`、`generationJobs`、`assets`、`collections`、`historyEvents` 和 `settingsMeta`。旧扩展数据通过导出/导入迁移，导入时无条件丢弃 API Key。
 
 扩展只要求 `activeTab`、`scripting` 等功能权限以及 Lensflow 正式站点桥接地址。Provider 和 Eagle 地址使用按需可选权限；网页桥接禁止读取密钥、浏览历史、任意文件和任意 URL。
+
+## 换机恢复
+
+仓库不保存 API Key。换机前先在旧电脑的 Lensflow 设置中导出本地备份，再在新电脑执行：
+
+```bash
+git clone https://github.com/AJ-nb/lensflow.git
+cd lensflow
+git switch main
+npm ci
+npm run typecheck
+npm test
+npm run build
+```
+
+Windows、macOS 与 Linux 使用相同命令，并须安装 Node.js `24.14.1` 与 npm `11.11.0`。安装扩展后，从设置页导入旧电脑备份；API Key 必须在新电脑重新填写。
+
+后续开发从最新 `main` 创建 `feat/*` 分支。产品现状见 [实施状态](docs/project-status.md)，需求与边界见 [产品规格](docs/product/product-spec.md)，架构与发布协议见 [架构](docs/architecture/architecture.md) 和 [发布与迁移](docs/architecture/release-and-migration.md)，目标站证据见 [Viko 分析](docs/research/viko-analysis.md)。
 
 更多信息见 [隐私说明](PRIVACY.md)、[安全政策](SECURITY.md)、[贡献指南](CONTRIBUTING.md) 和 [第三方声明](THIRD_PARTY_NOTICES.md)。
 

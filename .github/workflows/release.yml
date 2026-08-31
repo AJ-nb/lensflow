@@ -35,6 +35,9 @@ jobs:
       - run: npm run test:e2e
       - run: npm run build:extension
       - run: npm run zip
+      - run: node scripts/hydrate-release-feed.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: node scripts/release-artifacts.mjs
       - uses: actions/attest-build-provenance@v2
         with:
@@ -45,7 +48,7 @@ jobs:
           files: |
             dist/lensflow-*-chrome.zip
             dist/SHA256SUMS.txt
-            dist/latest.json
+            dist/*.json
           body_path: docs/releases/${{ github.ref_name }}.md
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

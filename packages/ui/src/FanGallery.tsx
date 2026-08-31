@@ -16,9 +16,10 @@ export interface FanGalleryProps {
   onCancel: () => Promise<void> | void;
   canCancel: boolean;
   logoUrl?: string;
+  onReveal?: () => void;
 }
 
-export function FanGallery({ batch, reducedMotion, readOnly = false, onRetryFailed, onSave, onDownload, onDownloadMany, onEagle, onEagleMany, onCancel, canCancel, logoUrl }: FanGalleryProps) {
+export function FanGallery({ batch, reducedMotion, readOnly = false, onRetryFailed, onSave, onDownload, onDownloadMany, onEagle, onEagleMany, onCancel, canCancel, logoUrl, onReveal }: FanGalleryProps) {
   const [focused, setFocused] = useState(0);
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set());
   const [busyAction, setBusyAction] = useState("");
@@ -57,6 +58,7 @@ export function FanGallery({ batch, reducedMotion, readOnly = false, onRetryFail
   const reveal = (child: GenerationChild) => {
     if (child.state !== "ready") return;
     setRevealed((current) => new Set(current).add(child.id));
+    onReveal?.();
   };
 
   const revealAll = () => {
@@ -65,11 +67,13 @@ export function FanGallery({ batch, reducedMotion, readOnly = false, onRetryFail
     revealTimers.current = [];
     if (reducedMotion) {
       setRevealed(new Set(ready.map((child) => child.id)));
+      if (ready.length) onReveal?.();
       return;
     }
     ready.forEach((child, index) => {
       revealTimers.current.push(window.setTimeout(() => setRevealed((current) => new Set(current).add(child.id)), index * 110));
     });
+    if (ready.length) onReveal?.();
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {

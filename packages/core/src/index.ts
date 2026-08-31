@@ -3,6 +3,7 @@ export * from "./bridge-security";
 export * from "./database";
 export * from "./data-management";
 export * from "./legacy-import";
+export * from "./onboarding";
 export * from "./image-measure";
 export * from "./providers";
 export * from "./product-analysis";

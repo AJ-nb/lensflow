@@ -41,12 +41,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lf-topnav button.is-active { color: var(--lf-rose); border-bottom-color: var(--lf-rose); }
 .lf-icon-button { width: 36px; height: 36px; display: inline-grid; place-items: center; border: 0; background: transparent; border-radius: var(--lf-radius); cursor: pointer; }
 .lf-icon-button:hover { background: #f0eeea; }
+.lf-update-badge { min-height: 34px; display: inline-flex; align-items: center; padding: 0 10px; border: 1px solid #9bcfc4; border-radius: 4px; color: #076654; background: var(--lf-teal-soft); text-decoration: none; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .lf-bridge-notice { min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 8px 18px; background: var(--lf-teal-soft); color: #076654; border-bottom: 1px solid #b8ded5; }
 .lf-bridge-notice a { color: inherit; font-weight: 800; }
 .lf-bridge-notice button { min-height: 30px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid currentColor; border-radius: var(--lf-radius); background: transparent; color: inherit; cursor: pointer; }
 .lf-bridge-notice.state-incompatible, .lf-bridge-notice.state-error { background: #fff3f1; color: var(--lf-danger); border-bottom-color: #e7b8b0; }
 .lf-bridge-notice.state-checking { color: var(--lf-muted); background: #f3f1ed; border-bottom-color: var(--lf-line); }
 .lf-mobile-readonly { display: none; min-height: 44px; align-items: center; justify-content: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid #edc7b9; background: #fff5ee; color: #82503d; }
+.lf-demo-notice { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 8px 16px; border-bottom: 1px solid #b8ded5; background: var(--lf-teal-soft); color: #076654; }
+.lf-demo-notice a { color: inherit; font-weight: 800; }
 
 .lf-workspace { min-height: calc(100vh - 64px); display: grid; grid-template-columns: 248px minmax(640px, 1fr) 320px; }
 .lf-library, .lf-inspector { min-width: 0; background: rgba(255,255,255,.72); }
@@ -100,6 +103,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lf-stepper button.is-active > span { background: var(--lf-rose); color: white; border-color: var(--lf-rose); }
 .lf-stepper button.is-complete > span { color: var(--lf-teal); border-color: var(--lf-teal); }
 .lf-stepper button:disabled { cursor: not-allowed; opacity: .38; }
+.lf-onboarding { max-width: 920px; margin: 12px auto 0; border-top: 1px solid #b8ded5; border-bottom: 1px solid #b8ded5; background: rgba(234,248,244,.58); }
+.lf-onboarding-progress { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 14px; border-bottom: 1px solid #cfe6e1; }
+.lf-onboarding-progress > span { display: inline-flex; align-items: center; gap: 7px; color: #076654; font-weight: 800; }
+.lf-onboarding-progress > div { display: flex; align-items: center; gap: 6px; }
+.lf-onboarding-progress i { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--lf-line-strong); border-radius: 50%; color: var(--lf-muted); font-size: 10px; font-style: normal; }
+.lf-onboarding-progress i.is-current { border-color: var(--lf-rose); color: var(--lf-rose); background: var(--lf-rose-soft); }
+.lf-onboarding-progress i.is-complete { border-color: var(--lf-teal); color: white; background: var(--lf-teal); }
+.lf-onboarding-copy { min-height: 72px; display: flex; align-items: center; gap: 18px; padding: 10px 14px; }
+.lf-onboarding-copy > div { min-width: 0; flex: 1; display: grid; grid-template-columns: auto 1fr; gap: 3px 9px; align-items: baseline; }
+.lf-onboarding-copy span { color: var(--lf-rose); font-size: 11px; font-weight: 850; }
+.lf-onboarding-copy strong { font-size: 14px; }
+.lf-onboarding-copy small { grid-column: 1 / -1; color: var(--lf-muted); line-height: 1.5; }
+.lf-onboarding-controls { min-height: 42px; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 5px 10px; border-top: 1px solid #cfe6e1; }
+.lf-onboarding-controls label, .lf-onboarding-controls button { min-height: 40px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; background: transparent; color: var(--lf-muted); cursor: pointer; font-size: 12px; }
+.lf-onboarding-controls label { margin-right: auto; color: #076654; font-weight: 750; }
 .lf-stage, .lf-results { max-width: 920px; margin: 22px auto 0; }
 .lf-section-heading { display: flex; justify-content: space-between; align-items: end; gap: 20px; margin-bottom: 20px; }
 .lf-section-heading h1, .lf-section-heading h2 { margin: 3px 0 0; font-size: 23px; line-height: 1.25; }
@@ -448,6 +466,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .lf-mobile-readonly { display: flex; }
   .surface-site .lf-topbar { padding: 0 12px; }
   .surface-site .lf-topnav, .surface-site .lf-project, .surface-site .lf-library, .surface-site .lf-inspector { display: none; }
+  .surface-site .lf-update-badge { display: none; }
   .surface-site .lf-brand { min-width: 0; flex: 1; }
   .surface-site .lf-brand strong { font-size: 15px; }
   .surface-site .lf-connection { font-size: 0; margin: 0; }
@@ -459,6 +478,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .surface-site .lf-stepper button { font-size: 11px; gap: 3px; }
   .surface-site .lf-stepper button::after { display: none; }
   .surface-site .lf-stepper button > span { width: 21px; height: 21px; }
+  .lf-onboarding-progress { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .lf-onboarding-copy { align-items: stretch; flex-direction: column; }
+  .lf-onboarding-copy .lf-button { width: 100%; }
+  .lf-onboarding-controls { flex-wrap: wrap; justify-content: flex-start; }
   .surface-site .lf-composer button, .surface-site .lf-composer textarea, .surface-site .lf-reference-composer input, .surface-site .lf-reference-composer button, .surface-site .lf-preflight-main input, .surface-site .lf-preflight-main select { pointer-events: none; opacity: .68; }
   .surface-site .lf-axis-grid { grid-template-columns: 1fr 1fr; }
   .surface-site .lf-analysis-layout { grid-template-columns: 1fr; gap: 0; }

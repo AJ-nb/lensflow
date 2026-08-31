@@ -60,12 +60,20 @@ const isActive = (href: string) => !href.startsWith("http") && (Astro.url.pathna
       window.addEventListener("keydown", (event) => { if (event.key === "Escape") setMenuOpen(false); });
 
       const ctas = [...document.querySelectorAll("[data-install-cta]")];
-      const applyCtaState = (state, version) => {
-        const labels = { checking: "检测中", install: "安装 Lensflow", enter: "进入创作空间", update: version ? `更新至 v${version}` : "更新插件" };
+      const applyCtaState = (state, version, releaseState = "unknown") => {
+        const labels = {
+          checking: "检测中",
+          install: "安装 Lensflow",
+          enter: "进入创作空间",
+          update: version ? `更新至 v${version}` : "更新插件",
+          incompatible: version ? `更新至 v${version}` : "解决协议不兼容",
+          blocked: "重新连接插件"
+        };
         for (const cta of ctas) {
           cta.dataset.installState = state;
+          cta.dataset.releaseState = releaseState;
           cta.textContent = labels[state];
-          cta.href = state === "enter" ? `${base}/studio` : `${base}/download`;
+          cta.href = state === "enter" ? `${base}/studio` : state === "blocked" ? `${base}/docs/install/` : `${base}/download`;
           if (state === "checking") cta.setAttribute("aria-busy", "true");
           else cta.removeAttribute("aria-busy");
         }
@@ -80,41 +88,48 @@ const isActive = (href: string) => !href.startsWith("http") && (Astro.url.pathna
         applyCtaState("checking");
         const nonce = `${crypto.randomUUID()}${crypto.randomUUID()}`;
         let settled = false;
-        const finish = (state, version) => {
+        let bridgeSeen = false;
+        const finish = (state, version, releaseState) => {
           if (settled) return;
           settled = true;
           window.clearTimeout(timer);
           window.removeEventListener("message", onBridge);
-          applyCtaState(state, version);
+          applyCtaState(state, version, releaseState);
         };
         const readStableVersion = async () => {
           try {
             const response = await fetch(`${base}/latest.json`, { cache: "no-store" });
-            if (!response.ok) return null;
+            if (!response.ok) return { status: "offline", version: null };
             const manifest = await response.json();
-            return manifest.status === "published" && manifest.channel !== "beta" ? manifest.version : null;
+            return manifest.status === "published" && manifest.channel === "stable"
+              ? { status: "published", version: manifest.version }
+              : { status: "unreleased", version: null };
           } catch {
-            return null;
+            return { status: "offline", version: null };
           }
         };
         const onBridge = (event) => {
           if (event.source !== window || event.origin !== location.origin || event.data?.nonce !== nonce) return;
           if (event.data?.type === "LENSFLOW_BRIDGE_INCOMPATIBLE") {
             const installed = typeof event.data?.extensionVersion === "string" ? event.data.extensionVersion : "0.0.0";
-            void readStableVersion().then((latest) => finish(latest && compareVersions(latest, installed) > 0 ? "update" : "install", latest || undefined));
+            void readStableVersion().then((release) => finish("incompatible", release.version && compareVersions(release.version, installed) > 0 ? release.version : undefined, release.status));
             return;
           }
           if (event.data?.type !== "LENSFLOW_BRIDGE_CONNECTED" || !event.ports[0]) return;
+          bridgeSeen = true;
           const port = event.ports[0];
           const id = crypto.randomUUID();
           port.onmessage = async (message) => {
-            if (message.data?.id !== id || !message.data.ok) return;
+            if (message.data?.id !== id) return;
+            if (!message.data.ok) {
+              finish("blocked", undefined, "unknown");
+              port.close();
+              return;
+            }
             const installed = message.data.data?.extensionVersion || "0.0.0";
-            let latest = installed;
-            try {
-              latest = (await readStableVersion()) || installed;
-            } catch { /* Installed extension remains usable if the release feed is offline. */ }
-            finish(compareVersions(latest, installed) > 0 ? "update" : "enter", latest);
+            const release = await readStableVersion();
+            const latest = release.version || installed;
+            finish(compareVersions(latest, installed) > 0 ? "update" : "enter", latest, release.status);
             port.close();
           };
           port.start();
@@ -122,7 +137,7 @@ const isActive = (href: string) => !href.startsWith("http") && (Astro.url.pathna
         };
         window.addEventListener("message", onBridge);
         window.postMessage({ type: "LENSFLOW_BRIDGE_CONNECT", version: bridgeVersion, nonce }, location.origin);
-        const timer = window.setTimeout(() => finish("install"), 1400);
+        const timer = window.setTimeout(() => finish(bridgeSeen ? "blocked" : "install", undefined, "unknown"), 1400);
       }
     </script>
   </body>

@@ -8,4 +8,5 @@ export const STORAGE_KEYS = {
   references: "visualLensReferences",
   overview: "visualLensLastOverview",
   result: "visualLensLastResult"
+  ,releaseUpdateNotice: "lensflowReleaseUpdateNotice"
 } as const;

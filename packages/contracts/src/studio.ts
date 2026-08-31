@@ -8,6 +8,7 @@ import type {
   MaintenanceSummary
 } from "./data";
 import type { AnalysisMode, AnalysisRecord, AnalysisSummary, SavedPrompt, SavePromptInput } from "./product-analysis";
+import type { ReleaseUpdateNotice } from "./release";
 
 export const evidenceSourceSchema = z.enum(["measured", "observed", "inferred", "unknown"]);
 export type EvidenceSource = z.infer<typeof evidenceSourceSchema>;
@@ -155,6 +156,8 @@ export interface StudioSnapshot {
   batches: GenerationBatch[];
   historyEvents: HistoryEvent[];
   storage: StorageSummary | null;
+  demoMode?: boolean;
+  updateNotice?: ReleaseUpdateNotice | null;
   captureHandoff?: StudioCaptureHandoff | null;
 }
 

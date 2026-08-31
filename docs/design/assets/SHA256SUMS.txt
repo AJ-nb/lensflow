@@ -1,0 +1,4 @@
+bdfaf27d24cdb0b92fbe87f29f4d47b2db51c9d154d84d005830085e82ce9472  studio-guided-workbench-first-run.png
+727e52afe1a3722950382d6a40433c44f574084cb4b259682499b6e12f777647  studio-horizontal-atelier.png
+139cc03a9e7c1beae15b359a71d5f074ee97452936f17832adb563e10ed606b1  studio-precision-workbench-selected.png
+5f5b14ee9e4a06de10f4c7d2ec9728cf071f825452b4f99460cd8cb886a4a67a  studio-reference-ribbon.png
