@@ -389,6 +389,7 @@ test("mobile result view exposes downloads but sends no write RPC", async ({ pag
   await expect(page.getByRole("button", { name: "取消任务" })).toHaveCount(0);
   await page.getByRole("button", { name: "揭示全部" }).click();
   await page.getByRole("button", { name: "下载成功项" }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __lensflowBridgeMethods: string[] }).__lensflowBridgeMethods.includes("download"))).toBe(true);
   const methods = await page.evaluate(() => (window as unknown as { __lensflowBridgeMethods: string[] }).__lensflowBridgeMethods);
   expect(methods).toContain("download");
   expect(methods.filter((method) => ["asset.put", "asset.delete", "task.create", "task.cancel", "task.retryFailed", "analysis.create", "analysis.cancel", "prompt.save", "eagle.export"].includes(method))).toEqual([]);
