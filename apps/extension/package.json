@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
+    "@types/react-dom": "^19.2.5",
     "@wxt-dev/module-react": "^1.2.2",
     "wxt": "^0.21.3"
   }
