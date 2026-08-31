@@ -2,6 +2,7 @@ import {
   LENSFLOW_BRIDGE_VERSION,
   UNKNOWN_CAPABILITIES,
   bridgeResponseSchema,
+  isBridgeWriteMethod,
   type AssetRecord,
   type AnalysisMode,
   type AnalysisRecord,
@@ -97,6 +98,9 @@ export class BridgeStudioRuntime implements StudioRuntime {
   }
 
   private async rpc<T>(method: BridgeMethod, payload?: unknown): Promise<T> {
+    if (window.matchMedia("(max-width: 760px)").matches && isBridgeWriteMethod(method)) {
+      throw new Error("移动端只读模式已阻止写入操作。请在桌面 Chrome 中继续。");
+    }
     const port = await this.connect();
     const id = crypto.randomUUID();
     return new Promise<T>((resolve, reject) => {

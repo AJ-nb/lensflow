@@ -89,8 +89,10 @@ async function installBridgeMock(page: Page, initialSnapshot: ReturnType<typeof 
   await page.addInitScript(({ initialSnapshot, incompatible, mockAnalysis }) => {
     const state = structuredClone(initialSnapshot);
     Object.defineProperty(window, "__lensflowBridgeMethods", { value: [], writable: false });
+    Object.defineProperty(window, "__lensflowBridgeConnectVersions", { value: [], writable: false });
     window.addEventListener("message", (event) => {
       if (event.source !== window || event.data?.type !== "LENSFLOW_BRIDGE_CONNECT") return;
+      (window as unknown as { __lensflowBridgeConnectVersions: number[] }).__lensflowBridgeConnectVersions.push(event.data.version);
       if (incompatible) {
         window.postMessage({ type: "LENSFLOW_BRIDGE_INCOMPATIBLE", nonce: event.data.nonce, expectedVersion: 1, receivedVersion: 2, extensionVersion: "0.1.0" }, location.origin);
         return;
@@ -151,6 +153,21 @@ test("incompatible protocol exposes an update path", async ({ page }) => {
   await page.goto("studio");
   await expect(page.getByText(/桥接协议不兼容/)).toBeVisible();
   await expect(page.getByRole("link", { name: "更新插件" })).toBeVisible();
+});
+
+test("homepage negotiates the current bridge protocol", async ({ page }) => {
+  await installBridgeMock(page, snapshot());
+  await page.goto("./");
+  await expect(page.getByRole("link", { name: "进入创作空间" }).first()).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __lensflowBridgeConnectVersions: number[] }).__lensflowBridgeConnectVersions)).toEqual([2]);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __lensflowBridgeMethods: string[] }).__lensflowBridgeMethods)).toContain("version.get");
+});
+
+test("homepage does not offer an update to an incompatible current release", async ({ page }) => {
+  await installBridgeMock(page, snapshot(), true);
+  await page.goto("./");
+  await expect(page.getByRole("link", { name: "安装 Lensflow" }).first()).toBeVisible();
+  await expect(page.getByText("更新至 v0.1.0")).toHaveCount(0);
 });
 
 test("connected empty library can create and validate keywords", async ({ page }) => {
@@ -286,6 +303,22 @@ test("mobile Studio is read-only and hides write controls", async ({ page }) => 
   await expect(page.getByRole("button", { name: "Provider 设置" })).toBeHidden();
   await expect(page.getByRole("button", { name: "上传图片" })).toBeHidden();
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
+});
+
+test("mobile result view exposes downloads but sends no write RPC", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installBridgeMock(page, snapshot({ keyword: true, childCount: 4, partial: true }));
+  await page.goto("studio");
+  await page.getByRole("button", { name: "结果" }).click();
+  await expect(page.getByRole("button", { name: "揭示全部" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "下载成功项" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "补全失败位置" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "取消任务" })).toHaveCount(0);
+  await page.getByRole("button", { name: "揭示全部" }).click();
+  await page.getByRole("button", { name: "下载成功项" }).click();
+  const methods = await page.evaluate(() => (window as unknown as { __lensflowBridgeMethods: string[] }).__lensflowBridgeMethods);
+  expect(methods).toContain("download");
+  expect(methods.filter((method) => ["asset.put", "asset.delete", "task.create", "task.cancel", "task.retryFailed", "analysis.create", "analysis.cancel", "prompt.save", "eagle.export"].includes(method))).toEqual([]);
 });
 
 test("desktop and zoom-equivalent layouts avoid horizontal overflow", async ({ page }) => {

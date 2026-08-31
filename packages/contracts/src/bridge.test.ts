@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  LENSFLOW_BRIDGE_READ_METHODS,
+  LENSFLOW_BRIDGE_WRITE_METHODS,
   MAX_BRIDGE_PAYLOAD_BYTES,
   assertBridgePayloadSize,
+  bridgeMethodSchema,
   bridgeRequestSchema,
+  isBridgeWriteMethod,
   isAllowedLensflowBridgeOrigin,
   parseBridgePayload,
   type BridgeMethod
@@ -20,6 +24,16 @@ function request(method: BridgeMethod, payload: unknown) {
 }
 
 describe("bridge security contract", () => {
+  it("classifies every bridge method as read or write exactly once", () => {
+    const reads = new Set<BridgeMethod>(LENSFLOW_BRIDGE_READ_METHODS);
+    const writes = new Set<BridgeMethod>(LENSFLOW_BRIDGE_WRITE_METHODS);
+    expect(bridgeMethodSchema.options).toHaveLength(reads.size + writes.size);
+    for (const method of bridgeMethodSchema.options) {
+      expect(Number(reads.has(method)) + Number(writes.has(method))).toBe(1);
+      expect(isBridgeWriteMethod(method)).toBe(writes.has(method));
+    }
+  });
+
   it("allows only the production path and explicit development origins", () => {
     expect(isAllowedLensflowBridgeOrigin("https://aj-nb.github.io", "/lensflow/studio")).toBe(true);
     expect(isAllowedLensflowBridgeOrigin("https://aj-nb.github.io", "/another-project")).toBe(false);

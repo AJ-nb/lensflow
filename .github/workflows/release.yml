@@ -9,6 +9,7 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  attestations: write
 
 concurrency:
   group: lensflow-pages
@@ -25,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
       - run: npm run typecheck
@@ -35,6 +36,9 @@ jobs:
       - run: npm run build:extension
       - run: npm run zip
       - run: node scripts/release-artifacts.mjs
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/lensflow-*-chrome.zip
       - run: npm run build:site
       - uses: softprops/action-gh-release@v2
         with:
@@ -42,7 +46,7 @@ jobs:
             dist/lensflow-*-chrome.zip
             dist/SHA256SUMS.txt
             dist/latest.json
-          generate_release_notes: true
+          body_path: docs/releases/${{ github.ref_name }}.md
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

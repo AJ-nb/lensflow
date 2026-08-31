@@ -29,6 +29,37 @@ export const bridgeMethodSchema = z.enum([
 ]);
 export type BridgeMethod = z.infer<typeof bridgeMethodSchema>;
 
+export const LENSFLOW_BRIDGE_READ_METHODS = [
+  "handshake",
+  "version.get",
+  "snapshot.get",
+  "task.subscribe",
+  "download",
+  "backup.open",
+  "capture.open",
+  "provider.open",
+  "analysis.open",
+  "analysis.get"
+] as const satisfies readonly BridgeMethod[];
+
+export const LENSFLOW_BRIDGE_WRITE_METHODS = [
+  "asset.put",
+  "asset.delete",
+  "task.create",
+  "task.cancel",
+  "task.retryFailed",
+  "analysis.create",
+  "analysis.cancel",
+  "prompt.save",
+  "eagle.export"
+] as const satisfies readonly BridgeMethod[];
+
+const BRIDGE_WRITE_METHOD_SET = new Set<BridgeMethod>(LENSFLOW_BRIDGE_WRITE_METHODS);
+
+export function isBridgeWriteMethod(method: BridgeMethod): boolean {
+  return BRIDGE_WRITE_METHOD_SET.has(method);
+}
+
 export const bridgeRequestSchema = z.object({
   version: z.literal(LENSFLOW_BRIDGE_VERSION),
   id: z.string().uuid(),

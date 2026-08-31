@@ -29,7 +29,7 @@ API Key 默认保存在 `chrome.storage.session`。只有用户明确选择“�
 
 ## 本地开发
 
-需要 Node.js 20 或更高版本。
+项目固定使用 Node.js `24.14.1` 与 npm `11.11.0`。版本文件与 `packageManager` 字段用于让本地和 CI 使用同一工具链。
 
 ```bash
 npm ci

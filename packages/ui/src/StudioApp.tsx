@@ -507,6 +507,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
             latestBatch ? <FanGallery
               batch={latestBatch}
               reducedMotion={reducedMotion}
+              readOnly={writesDisabled}
               onRetryFailed={async () => { await runtime.retryFailed(latestBatch.id); await reload(); }}
               onSave={async (child) => { await runtime.saveWork(latestBatch.id, child.id); await reload(); }}
               onDownload={(child) => runtime.download(latestBatch.id, child?.id)}

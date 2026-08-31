@@ -475,6 +475,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .lf-stage-footer .lf-button { flex: 1; }
   .lf-fan { min-height: 370px; }
   .lf-fan-card { width: 116px; }
+  .surface-site .lf-result-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .surface-site .lf-result-actions .lf-button { width: 100%; min-width: 0; justify-content: center; }
+  .surface-site .lf-focused-actions.is-readonly { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 9px 0; }
+  .surface-site .lf-focused-actions.is-readonly strong { margin: 0; text-align: center; }
+  .surface-site .lf-focused-actions.is-readonly .lf-button { width: 100%; min-width: 0; justify-content: center; }
   .lf-reference-add { align-items: stretch; flex-direction: column; }
   .lf-reference-add > div { display: grid; grid-template-columns: 1fr 1fr; }
   .lf-history-layout { grid-template-columns: 1fr; }

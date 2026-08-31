@@ -6,6 +6,7 @@ import { getFanLayout, nextFanIndex } from "@lensflow/core";
 export interface FanGalleryProps {
   batch: GenerationBatch;
   reducedMotion: boolean;
+  readOnly?: boolean;
   onRetryFailed: () => Promise<void> | void;
   onSave: (child: GenerationChild) => Promise<void> | void;
   onDownload: (child?: GenerationChild) => Promise<void> | void;
@@ -17,7 +18,7 @@ export interface FanGalleryProps {
   logoUrl?: string;
 }
 
-export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDownload, onDownloadMany, onEagle, onEagleMany, onCancel, canCancel, logoUrl }: FanGalleryProps) {
+export function FanGallery({ batch, reducedMotion, readOnly = false, onRetryFailed, onSave, onDownload, onDownloadMany, onEagle, onEagleMany, onCancel, canCancel, logoUrl }: FanGalleryProps) {
   const [focused, setFocused] = useState(0);
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set());
   const [busyAction, setBusyAction] = useState("");
@@ -158,15 +159,15 @@ export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDown
         })}
       </div>
 
-      {focusedChild?.state === "ready" && revealed.has(focusedChild.id) && <div className="lf-focused-actions" aria-label={`结果 ${focused + 1} 操作`}>
+      {focusedChild?.state === "ready" && revealed.has(focusedChild.id) && <div className={`lf-focused-actions ${readOnly ? "is-readonly" : ""}`} aria-label={`结果 ${focused + 1} 操作`}>
         <strong>结果 {focused + 1}</strong>
         <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("download-one", () => onDownload(focusedChild), "当前结果已加入下载队列")}><Download size={15} />下载</button>
-        <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("save", () => onSave(focusedChild), "当前结果已收入作品集")}><FolderHeart size={15} />收入作品集</button>
-        {onEagle && <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("eagle", () => onEagle(focusedChild), "已导出 Eagle")}><Send size={15} />导出 Eagle</button>}
-        <button className={`lf-button ${selected.has(focusedChild.id) ? "is-selected" : ""}`} disabled={Boolean(busyAction)} aria-pressed={selected.has(focusedChild.id)} onClick={() => setSelected((current) => { const next = new Set(current); if (next.has(focusedChild.id)) next.delete(focusedChild.id); else next.add(focusedChild.id); return next; })}><CheckSquare size={15} />{selected.has(focusedChild.id) ? "已选择" : "多选"}</button>
+        {!readOnly && <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("save", () => onSave(focusedChild), "当前结果已收入作品集")}><FolderHeart size={15} />收入作品集</button>}
+        {!readOnly && onEagle && <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("eagle", () => onEagle(focusedChild), "已导出 Eagle")}><Send size={15} />导出 Eagle</button>}
+        {!readOnly && <button className={`lf-button ${selected.has(focusedChild.id) ? "is-selected" : ""}`} disabled={Boolean(busyAction)} aria-pressed={selected.has(focusedChild.id)} onClick={() => setSelected((current) => { const next = new Set(current); if (next.has(focusedChild.id)) next.delete(focusedChild.id); else next.add(focusedChild.id); return next; })}><CheckSquare size={15} />{selected.has(focusedChild.id) ? "已选择" : "多选"}</button>}
       </div>}
 
-      {selectedReady.length > 0 && <div className="lf-batch-selection" role="toolbar" aria-label="批量结果操作"><strong>已选 {selectedReady.length} 张</strong><button className="lf-button" disabled={!onDownloadMany || Boolean(busyAction)} onClick={() => void runAction("download-many", () => onDownloadMany?.(selectedReady), `已提交 ${selectedReady.length} 张下载`)}><Download size={15} />批量下载</button>{onEagleMany && <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("eagle-many", () => onEagleMany(selectedReady), "已批量导出 Eagle")}><Send size={15} />批量 Eagle</button>}<button className="lf-button" onClick={() => setSelected(new Set())}>清除选择</button></div>}
+      {!readOnly && selectedReady.length > 0 && <div className="lf-batch-selection" role="toolbar" aria-label="批量结果操作"><strong>已选 {selectedReady.length} 张</strong><button className="lf-button" disabled={!onDownloadMany || Boolean(busyAction)} onClick={() => void runAction("download-many", () => onDownloadMany?.(selectedReady), `已提交 ${selectedReady.length} 张下载`)}><Download size={15} />批量下载</button>{onEagleMany && <button className="lf-button" disabled={Boolean(busyAction)} onClick={() => void runAction("eagle-many", () => onEagleMany(selectedReady), "已批量导出 Eagle")}><Send size={15} />批量 Eagle</button>}<button className="lf-button" onClick={() => setSelected(new Set())}>清除选择</button></div>}
 
       <div className="lf-result-actions">
         <button className="lf-button is-primary" type="button" onClick={revealAll} disabled={readyCount === 0}>
@@ -175,12 +176,12 @@ export function FanGallery({ batch, reducedMotion, onRetryFailed, onSave, onDown
         <button className="lf-button" type="button" disabled={readyCount === 0 || Boolean(busyAction)} onClick={() => void runAction("download-all", () => onDownload(), `已提交 ${readyCount} 张下载`)}>
           <Download size={16} />下载成功项
         </button>
-        {failedCount > 0 && (
+        {!readOnly && failedCount > 0 && (
           <button className="lf-button" type="button" disabled={Boolean(busyAction)} onClick={() => void runAction("retry", onRetryFailed, "失败位置已进入补全队列")}>
             <RotateCcw size={16} />补全失败位置
           </button>
         )}
-        {activeCount > 0 && (canCancel
+        {!readOnly && activeCount > 0 && (canCancel
           ? <button className="lf-button" type="button" disabled={Boolean(busyAction)} onClick={() => void runAction("cancel", onCancel, "取消请求已提交")}><Square size={15} />取消任务</button>
           : <button className="lf-button" type="button" disabled title="当前 Provider 未提供取消接口"><Square size={15} />不支持取消</button>)}
       </div>
