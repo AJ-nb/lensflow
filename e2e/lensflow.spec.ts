@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 const now = "2026-08-29T00:00:00.000Z";
+const currentExtensionVersion = (JSON.parse(readFileSync(new URL("../apps/extension/package.json", import.meta.url), "utf8")) as { version: string }).version;
 const capabilities = {
   authentication: "supported",
   visionInput: "supported",
@@ -20,7 +22,7 @@ const upstreamFailure = {
   requestId: "cf-ray-demo-502"
 } as const;
 
-function snapshot(options: { keyword?: boolean; childCount?: number; partial?: boolean; analyzedAsset?: boolean; failedAnalysis?: boolean } = {}) {
+function snapshot(options: { keyword?: boolean; childCount?: number; partial?: boolean; analyzedAsset?: boolean; failedAnalysis?: boolean; extensionVersion?: string } = {}) {
   const childCount = options.childCount ?? 0;
   const children = Array.from({ length: childCount }, (_, index) => {
     const failed = Boolean(options.partial && index === childCount - 2);
@@ -44,7 +46,7 @@ function snapshot(options: { keyword?: boolean; childCount?: number; partial?: b
     connected: true,
     readOnly: false,
     protocolVersion: 2,
-    extensionVersion: "0.2.0",
+    extensionVersion: options.extensionVersion ?? currentExtensionVersion,
     connectionMessage: "网页与本机插件已连接。",
     provider: {
       id: "provider",
@@ -106,7 +108,7 @@ async function installBridgeMock(page: Page, initialSnapshot: ReturnType<typeof 
       if (event.source !== window || event.data?.type !== "LENSFLOW_BRIDGE_CONNECT") return;
       (window as unknown as { __lensflowBridgeConnectVersions: number[] }).__lensflowBridgeConnectVersions.push(event.data.version);
       if (incompatible) {
-        window.postMessage({ type: "LENSFLOW_BRIDGE_INCOMPATIBLE", nonce: event.data.nonce, expectedVersion: 1, receivedVersion: 2, extensionVersion: "0.1.0" }, location.origin);
+        window.postMessage({ type: "LENSFLOW_BRIDGE_INCOMPATIBLE", nonce: event.data.nonce, expectedVersion: 1, receivedVersion: 2, extensionVersion: state.extensionVersion }, location.origin);
         return;
       }
       const channel = new MessageChannel();
@@ -114,7 +116,7 @@ async function installBridgeMock(page: Page, initialSnapshot: ReturnType<typeof 
         const request = message.data;
         (window as unknown as { __lensflowBridgeMethods: string[] }).__lensflowBridgeMethods.push(request.method);
         let data: unknown = null;
-        if (request.method === "version.get") data = { version: 2, extensionVersion: "0.2.0" };
+        if (request.method === "version.get") data = { version: 2, extensionVersion: state.extensionVersion };
         if (request.method === "snapshot.get") data = state;
         if (request.method === "provider.open") data = null;
         if (request.method === "analysis.open") data = null;
@@ -210,7 +212,7 @@ test("homepage offers installation when no extension responds", async ({ page })
 
 test("homepage offers a newer stable release to an older extension", async ({ page }) => {
   await page.route("**/latest.json", (route) => route.fulfill({ json: publishedManifest("0.3.0") }));
-  await installBridgeMock(page, snapshot());
+  await installBridgeMock(page, snapshot({ extensionVersion: "0.2.0" }));
   await page.goto("./");
   const cta = page.getByRole("link", { name: "更新至 v0.3.0" }).first();
   await expect(cta).toBeVisible();
