@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@lensflow/contracts": "0.3.3",
-    "dexie": "^4.4.4",
+    "dexie": "^4.4.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
