@@ -11,6 +11,7 @@ export type ProtocolMode = z.infer<typeof protocolModeSchema>;
 
 export const providerProfileSchema = z.object({
   id: z.string().min(1),
+  credentialRef: z.string().min(1).max(160).optional(),
   name: z.string().min(1).max(80),
   kind: providerKindSchema,
   baseUrl: z.string().url(),
@@ -23,6 +24,30 @@ export const providerProfileSchema = z.object({
   updatedAt: z.string().datetime()
 });
 export type ProviderProfile = z.infer<typeof providerProfileSchema>;
+
+export const providerCredentialMutationSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("keep") }),
+  z.object({ action: z.literal("replace"), secret: z.string().trim().min(1).max(8192) }),
+  z.object({ action: z.literal("clear") })
+]);
+export type ProviderCredentialMutation = z.infer<typeof providerCredentialMutationSchema>;
+
+export const providerCandidateInputSchema = z.object({
+  profile: providerProfileSchema,
+  credential: providerCredentialMutationSchema
+});
+export type ProviderCandidateInput = z.infer<typeof providerCandidateInputSchema>;
+
+export const providerCredentialStateSchema = z.enum(["missing", "session", "device"]);
+export type ProviderCredentialState = z.infer<typeof providerCredentialStateSchema>;
+
+export const providerEditorStateSchema = z.object({
+  active: providerProfileSchema.nullable(),
+  draft: providerProfileSchema.nullable(),
+  activeCredentialState: providerCredentialStateSchema,
+  draftCredentialState: providerCredentialStateSchema
+});
+export type ProviderEditorState = z.infer<typeof providerEditorStateSchema>;
 
 export const DEFAULT_BIYUAN_PROFILE: ProviderProfile = {
   id: "biyuan",
@@ -135,6 +160,7 @@ export interface ProviderAdapter {
 
 export interface ProviderSecretStore {
   get(providerId: string): Promise<string | undefined>;
+  state(providerId: string): Promise<ProviderCredentialState>;
   set(providerId: string, secret: string, persist: boolean): Promise<void>;
   remove(providerId: string): Promise<void>;
 }

@@ -8,7 +8,7 @@ export default defineConfig({
   manifest: {
     name: "镜序 Lensflow",
     description: "从网页灵感到可复用创作资产的本地 AI 工作台。",
-    version: "0.3.0",
+    version: "0.3.1",
     minimum_chrome_version: "122",
     permissions: ["activeTab", "alarms", "downloads", "storage", "contextMenus", "sidePanel", "scripting"],
     host_permissions: ["https://aj-nb.github.io/lensflow/*"],

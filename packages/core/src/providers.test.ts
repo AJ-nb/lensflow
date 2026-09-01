@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_BIYUAN_PROFILE } from "@lensflow/contracts";
 import { BiyuanAdapter, MODEL_CATALOG_CACHE_TTL_MS, OpenAICompatibleAdapter, ProviderHttpError, comfyWebSocketUrl, extractModelModalities, isModelCatalogCacheFresh } from "./providers";
+import { toOperationFailure } from "./operation-failure";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -38,6 +39,55 @@ describe("provider adapters", () => {
     vi.stubGlobal("fetch", mocked);
     await expect(new OpenAICompatibleAdapter().listModels(DEFAULT_BIYUAN_PROFILE, "bad")).rejects.toBeInstanceOf(ProviderHttpError);
     expect(mocked).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes an HTML 502 without exposing markup or credentials", async () => {
+    const mocked = vi.fn().mockResolvedValue(new Response(`<!DOCTYPE html><html><body><h1>Bad gateway</h1><p>Authorization: Bearer sk-private-token</p></body></html>`, {
+      status: 502,
+      headers: { "content-type": "text/html", "cf-ray": "ray-502" }
+    }));
+    vi.stubGlobal("fetch", mocked);
+    const error = await new OpenAICompatibleAdapter().listModels(DEFAULT_BIYUAN_PROFILE, "bad").catch((reason) => reason) as ProviderHttpError;
+    expect(error).toBeInstanceOf(ProviderHttpError);
+    expect(error.failure).toMatchObject({ category: "upstream", status: 502, retryable: true, summary: "彼源暂时不可用", requestId: "ray-502" });
+    expect(error.message).not.toContain("DOCTYPE");
+    expect(error.failure.technicalDetails).not.toContain("<html");
+    expect(error.failure.technicalDetails).not.toContain("sk-private-token");
+  });
+
+  it("keeps HTTP semantics when an error claims JSON but contains invalid JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("upstream unavailable {", {
+      status: 503,
+      headers: { "content-type": "application/json" }
+    })));
+    const error = await new OpenAICompatibleAdapter().listModels(DEFAULT_BIYUAN_PROFILE, "key").catch((reason) => reason) as ProviderHttpError;
+    expect(error.failure).toMatchObject({ category: "upstream", status: 503, retryable: true });
+  });
+
+  it("classifies invalid JSON on a successful response as an invalid response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("not-json", {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })));
+    const error = await new OpenAICompatibleAdapter().listModels(DEFAULT_BIYUAN_PROFILE, "key").catch((reason) => reason) as ProviderHttpError;
+    expect(error.failure).toMatchObject({ category: "invalid-response", status: 200, retryable: false });
+  });
+
+  it("classifies rate limits separately and never retries automatically", async () => {
+    const mocked = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Too many requests" } }), {
+      status: 429,
+      headers: { "content-type": "application/json", "x-request-id": "request-429" }
+    }));
+    vi.stubGlobal("fetch", mocked);
+    const error = await new OpenAICompatibleAdapter().listModels(DEFAULT_BIYUAN_PROFILE, "key").catch((reason) => reason) as ProviderHttpError;
+    expect(error.failure).toMatchObject({ category: "rate-limit", status: 429, retryable: true, requestId: "request-429" });
+    expect(mocked).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies a fetch rejection as a network failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const error = await new OpenAICompatibleAdapter().listModels(DEFAULT_BIYUAN_PROFILE, "key").catch((reason) => reason);
+    expect(toOperationFailure(error, "彼源")).toMatchObject({ category: "network", retryable: true, summary: "无法连接 彼源" });
   });
 
   it("uses the documented Biyuan async endpoint and reports no cancellation", async () => {

@@ -35,12 +35,12 @@ const manifest = {
   publishedAt,
   minimumChrome: "122",
   bridgeProtocol: 2,
-  dataVersion: 2,
+  dataVersion: 3,
   minimumDataVersion: 1,
   migration: {
-    required: false,
+    required: true,
     backupRecommended: true,
-    notes: "当前版本不升级本地数据库；覆盖安装前仍建议导出备份。"
+    notes: "首次打开会自动清理旧错误中的 HTML 和过长响应，同时保留分析、任务与历史记录；覆盖安装前建议导出备份。"
   },
   artifacts: [
     {

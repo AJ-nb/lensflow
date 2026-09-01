@@ -57,12 +57,14 @@ import {
   type MaintenanceSummary,
   type OnboardingState,
   type OnboardingStep,
+  type OperationFailure,
   type ReferenceKind,
   type StudioRuntime,
   type StudioSnapshot
 } from "@lensflow/contracts";
-import { completeOnboardingStep, compilePrompt, createOnboardingState, drawAxis, drawHand, normalizeReferences, parseOnboardingState, setOnboardingMode, validateKeywordInput } from "@lensflow/core";
+import { completeOnboardingStep, compilePrompt, createOnboardingState, drawAxis, drawHand, normalizeLegacyFailure, normalizeReferences, parseOnboardingState, setOnboardingMode, toOperationFailure, validateKeywordInput } from "@lensflow/core";
 import { FanGallery } from "./FanGallery";
+import { FailurePanel } from "./FailurePanel";
 import { OnboardingGuide } from "./OnboardingGuide";
 import type { ProviderDialogProps } from "./ProviderDialog";
 
@@ -76,16 +78,19 @@ export interface StudioAppProps {
   providerDialog?: ComponentType<ProviderDialogProps>;
 }
 
-function AnalysisStage({ asset, summary, record, busy, readOnly, onQuick, onDeep, onCancel, onAdvanced, onSavePrompt, onUsePrompt, onSavePalette, onBack, onContinue }: {
+function AnalysisStage({ asset, summary, record, busy, readOnly, failureOverride, providerName, onQuick, onDeep, onCancel, onAdvanced, onConfigure, onSavePrompt, onUsePrompt, onSavePalette, onBack, onContinue }: {
   asset: AssetRecord | null;
   summary: AnalysisSummary | null;
   record: AnalysisRecord | null;
   busy: AnalysisMode | "";
   readOnly: boolean;
+  failureOverride: OperationFailure | null;
+  providerName?: string;
   onQuick: () => void;
   onDeep: () => void;
   onCancel: () => void;
   onAdvanced: () => void;
+  onConfigure: () => void;
   onSavePrompt: (text: string, negative: string, language: "zh" | "en", variantKind?: "faithful" | "commercial" | "exploratory") => void;
   onUsePrompt: (text: string) => void;
   onSavePalette: () => void;
@@ -102,6 +107,7 @@ function AnalysisStage({ asset, summary, record, busy, readOnly, onQuick, onDeep
     setNegative(result.prompts.negative[language]);
   }, [language, result]);
   const running = Boolean(busy) || ["queued", "preparing", "analyzing"].includes(summary?.state ?? "");
+  const analysisFailure = failureOverride ?? summary?.failure ?? record?.failure ?? (summary?.error ? normalizeLegacyFailure(summary.error, providerName) : null);
   if (!asset) return <section className="lf-stage"><div className="lf-empty-state"><ImagePlus size={28} /><h2>先选择一张产品或视觉素材</h2><p>Lensflow 会先在本机测量尺寸、比例和色卡，再发送一次结构化视觉分析请求。</p><button className="lf-button" onClick={onBack}>返回素材</button></div></section>;
   return <section className="lf-stage lf-analysis-stage">
     <div className="lf-section-heading"><div><span className="lf-kicker">产品优先 · 通用视觉回退</span><h1>分析产品并生成可编辑提示词</h1></div><div className="lf-heading-actions"><button className="lf-button" onClick={onAdvanced}><Settings size={16} />高级分析工具</button><button className="lf-button" disabled={readOnly || running} onClick={onDeep}><Sparkles size={16} />{busy === "deep" ? "深入分析中" : "深入分析"}</button></div></div>
@@ -115,7 +121,7 @@ function AnalysisStage({ asset, summary, record, busy, readOnly, onQuick, onDeep
       <div className="lf-analysis-content">
         {!summary && !record ? <div className="lf-analysis-empty"><WandSparkles size={24} /><h2>一次请求完成快速解构</h2><p>返回内容分类、形态与 CMF、构图镜头、证据边界、双语提示词、三种变体和五轴建议。</p><button className="lf-button is-primary" disabled={readOnly} onClick={onQuick}><WandSparkles size={16} />开始快速分析</button></div> : null}
         {running ? <div className="lf-analysis-progress" role="status"><RefreshCw className="is-spinning" /><div><strong>{summary?.state === "preparing" ? "正在准备本地证据" : (busy || summary?.mode) === "deep" ? "正在执行三段深入分析" : "正在执行一次结构化分析"}</strong><span>不会自动重试；中断后需由你明确重新发起。</span></div><button className="lf-button" onClick={onCancel}>取消</button></div> : null}
-        {summary && ["failed", "interrupted"].includes(summary.state) ? <div className="lf-analysis-error"><AlertTriangle size={18} /><div><strong>{summary.state === "interrupted" ? "分析已中断" : "分析未完成"}</strong><span>{summary.error}</span></div><button className="lf-button" disabled={readOnly} onClick={onQuick}>重新分析</button></div> : null}
+        {analysisFailure && (failureOverride || (summary && ["failed", "interrupted"].includes(summary.state))) ? <FailurePanel failure={analysisFailure} title={summary?.state === "interrupted" ? "分析已中断" : "分析未完成"} onRetry={readOnly ? undefined : onQuick} onConfigure={readOnly ? undefined : onConfigure} retryLabel="重新分析" /> : null}
         {result ? <>
           <div className="lf-analysis-status"><span className={`state-${record?.state}`}><ShieldCheck size={15} />{record?.state === "partial" ? "部分结果" : "分析完成"}</span><strong>{contentKindLabel(result.classification.kind)}</strong><small>{Math.round(result.classification.confidence * 100)}% · {result.classification.reason}</small></div>
           <div className="lf-evidence-grid">
@@ -181,6 +187,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
   const [snapshot, setSnapshot] = useState<StudioSnapshot>(EMPTY_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [analysisFailure, setAnalysisFailure] = useState<OperationFailure | null>(null);
   const [providerOpen, setProviderOpen] = useState(initialProviderOpen);
   const [hand, setHand] = useState<AxisHand>(EMPTY_HAND);
   const [tray, setTray] = useState<KeywordCard[]>([]);
@@ -286,6 +293,8 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
     if (selectedAnalysis && ["ready", "partial"].includes(selectedAnalysis.state)) completeGuideStep("analysis");
   }, [completeGuideStep, selectedAnalysis?.id, selectedAnalysis?.state]);
 
+  useEffect(() => { setAnalysisFailure(null); }, [selectedAssetId]);
+
   const drawOne = (axis: AxisName) => setHand((current) => ({ ...current, [axis]: drawAxis(axis, snapshot.keywords, current[axis]) }));
   const toggleLock = (axis: AxisName) => setHand((current) => current[axis] ? ({ ...current, [axis]: { ...current[axis]!, locked: !current[axis]!.locked } }) : current);
   const addHandToTray = () => setTray((current) => [...new Map([...current, ...AXIS_ORDER.map((axis) => hand[axis]).filter((card): card is KeywordCard => Boolean(card))].map((card) => [card.id, card])).values()]);
@@ -354,12 +363,14 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
     if (!selectedAssetId || writesDisabled) return;
     setAnalysisBusy(mode);
     setError("");
+    setAnalysisFailure(null);
     try {
       const record = await runtime.analyzeAsset(selectedAssetId, mode);
       setAnalysisRecord(record);
+      setAnalysisFailure(record.failure ?? null);
       await reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "分析失败");
+      setAnalysisFailure(toOperationFailure(reason, snapshot.provider?.name ?? "Provider"));
     } finally { setAnalysisBusy(""); }
   };
 
@@ -522,10 +533,13 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
               record={analysisRecord}
               busy={analysisBusy}
               readOnly={writesDisabled}
+              failureOverride={analysisFailure}
+              providerName={snapshot.provider?.name}
               onQuick={() => void runAnalysis("quick")}
               onDeep={() => void runAnalysis("deep")}
               onCancel={() => { const id = analysisRecord?.id || selectedAnalysis?.id; if (id) void runtime.cancelAnalysis(id).then(setAnalysisRecord); }}
               onAdvanced={() => void openAdvancedAnalysis()}
+              onConfigure={() => void openProvider()}
               onSavePrompt={(text, negative, language, variantKind) => void saveAnalysisPrompt(text, negative, language, variantKind)}
               onUsePrompt={(text) => { setBody(text); setActiveStep(3); }}
               onSavePalette={() => void addReference("palette")}
@@ -599,7 +613,7 @@ export function StudioApp({ runtime, surface = "page", title = "镜序 Lensflow"
         <Dialog.Portal><Dialog.Overlay className="lf-dialog-overlay" /><Dialog.Content className="lf-dialog-content lf-keyword-dialog" aria-describedby="keyword-description"><div className="lf-dialog-titlebar"><div><span className="lf-kicker">用户关键词库</span><Dialog.Title>创建关键词</Dialog.Title></div><Dialog.Close className="lf-icon-button" aria-label="关闭创建关键词"><X size={18} /></Dialog.Close></div><Dialog.Description id="keyword-description">关键词只保存在本机，并用于五轴抽卡和提示词组合。</Dialog.Description><label className="lf-field"><span>所属轴</span><select value={newAxis} onChange={(event) => { setNewAxis(event.target.value as AxisName); setKeywordError(""); }}>{AXIS_ORDER.map((axis) => <option value={axis} key={axis}>{AXIS_LABELS[axis]}</option>)}</select></label><label className="lf-field"><span>关键词</span><input autoFocus value={newKeyword} onChange={(event) => { setNewKeyword(event.target.value); setKeywordError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void createKeyword(); } }} placeholder="输入自己的关键词" maxLength={240} /></label>{keywordError && <p className="lf-inline-status is-warning" role="alert"><AlertTriangle size={15} />{keywordError}</p>}<div className="lf-dialog-actions"><Dialog.Close className="lf-button">取消</Dialog.Close><button className="lf-button is-primary" disabled={!newKeyword.trim()} onClick={() => void createKeyword()}>保存到关键词库</button></div></Dialog.Content></Dialog.Portal>
       </Dialog.Root>
       <input ref={uploadInputRef} type="file" accept="image/*" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importCapture(file); event.currentTarget.value = ""; }} />
-      {!isSite && ProviderEditor && <ProviderEditor runtime={runtime} provider={snapshot.provider} open={providerOpen} onOpenChange={setProviderOpen} onSaved={reload} returnFocusRef={providerReturnRef} />}
+      {!isSite && ProviderEditor && <ProviderEditor runtime={runtime} provider={snapshot.provider} open={providerOpen} onOpenChange={setProviderOpen} onSaved={reload} returnFocusRef={providerReturnRef} surface={surface} />}
     </div>
   );
 }

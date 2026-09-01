@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { ModelDescriptor, ProviderCapabilities, ProviderConnectionResult, ProviderProfile } from "./provider";
+import { operationFailureSchema } from "./failure";
+import type { ModelDescriptor, ProviderCandidateInput, ProviderCapabilities, ProviderConnectionResult, ProviderEditorState, ProviderProfile } from "./provider";
 import type {
   BackupExport,
   BackupImportMode,
@@ -83,6 +84,7 @@ export const generationChildSchema = z.object({
   dataUrl: z.string().optional(),
   revisedPrompt: z.string().optional(),
   error: z.string().optional(),
+  failure: operationFailureSchema.optional(),
   attempt: z.number().int().nonnegative().default(0),
   updatedAt: z.string().datetime()
 });
@@ -189,7 +191,11 @@ export interface StudioRuntime {
   addReference?(assetId: string, kind: ReferenceKind): Promise<StudioReference>;
   setReferenceEnabled?(id: string, enabled: boolean): Promise<StudioReference>;
   deleteReference?(id: string): Promise<void>;
-  saveProvider(profile: ProviderProfile, secret?: string): Promise<ProviderProfile>;
+  loadProviderEditorState(): Promise<ProviderEditorState>;
+  saveProviderDraft(candidate: ProviderCandidateInput): Promise<ProviderEditorState>;
+  testProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderConnectionResult>;
+  probeProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderCapabilities>;
+  activateProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderProfile>;
   listModels(providerId: string, refresh?: boolean): Promise<ModelDescriptor[]>;
   testConnection(providerId: string): Promise<ProviderConnectionResult>;
   probeCapabilities(providerId: string): Promise<ProviderCapabilities>;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { operationFailureSchema } from "./failure";
 import { AXIS_ORDER, evidenceSourceSchema } from "./studio";
 
 export const analysisModeSchema = z.enum(["quick", "deep"]);
@@ -126,6 +127,7 @@ export const analysisRecordSchema = z.object({
   result: productAnalysisResultSchema.optional(),
   rawResponse: z.unknown().optional(),
   error: z.string().optional(),
+  failure: operationFailureSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });
@@ -139,6 +141,7 @@ export const analysisSummarySchema = analysisRecordSchema.pick({
   providerId: true,
   model: true,
   error: true,
+  failure: true,
   createdAt: true,
   updatedAt: true
 }).extend({

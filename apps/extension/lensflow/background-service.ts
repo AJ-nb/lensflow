@@ -5,7 +5,9 @@ import {
   parseBridgePayload,
   releaseUpdateNoticeSchema,
   generationSettingsSchema,
+  providerCandidateInputSchema,
   providerProfileSchema,
+  UNKNOWN_CAPABILITIES,
   savePromptInputSchema,
   type AssetRecord,
   type AnalysisMode,
@@ -16,7 +18,9 @@ import {
   type EagleWorkExportResult,
   type ModelDescriptor,
   type ProviderCapabilities,
+  type ProviderCandidateInput,
   type ProviderConnectionResult,
+  type ProviderEditorState,
   type ProviderProfile,
   type ReferenceKind,
   type SavePromptInput,
@@ -34,12 +38,15 @@ import {
   buildProductAnalysisPrompt,
   dataUrlToBlob,
   normalizeReferences,
+  normalizeLegacyFailure,
   originPattern,
   isModelCatalogCacheFresh,
   readStudioSnapshot,
   redactSensitive,
   recordHistory,
   retryFailedChildren,
+  studioSnapshotForBridge,
+  toOperationFailure,
   QUICK_ANALYSIS_JSON_SCHEMA,
   localMeasurementsFromAsset,
   parseProductAnalysisOutput,
@@ -151,6 +158,16 @@ export async function handleLensflowRequest(request: RuntimeRequest): Promise<un
       return readLiveStudioSnapshot();
     case "LENSFLOW_SAVE_PROVIDER":
       return saveProvider(request.profile, request.secret);
+    case "LENSFLOW_PROVIDER_EDITOR_STATE":
+      return readProviderEditorState();
+    case "LENSFLOW_SAVE_PROVIDER_DRAFT":
+      return saveProviderDraft(request.candidate);
+    case "LENSFLOW_TEST_PROVIDER_CANDIDATE":
+      return testProviderCandidate(request.candidate);
+    case "LENSFLOW_PROBE_PROVIDER_CANDIDATE":
+      return probeProviderCandidate(request.candidate);
+    case "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE":
+      return activateProviderCandidate(request.candidate);
     case "LENSFLOW_LIST_MODELS":
       return listModels(request.providerId, request.refresh);
     case "LENSFLOW_TEST_PROVIDER":
@@ -227,14 +244,11 @@ export async function resumeRemoteTasks(): Promise<void> {
 
 async function saveProvider(raw: ProviderProfile, secret?: string): Promise<ProviderProfile> {
   const profile = providerProfileSchema.parse({ ...raw, updatedAt: new Date().toISOString() });
-  await writeSetting(db, "activeProvider", profile);
-  if (secret !== undefined) {
-    if (secret.trim()) await secrets.set(profile.id, secret.trim(), profile.rememberSecret);
-    else await secrets.remove(profile.id);
-  }
-  await recordHistory(db, "provider.updated", `已更新 Provider：${profile.name}`, profile.id);
-  await notifyChanged();
-  return profile;
+  const state = await saveProviderDraft({
+    profile,
+    credential: secret?.trim() ? { action: "replace", secret: secret.trim() } : { action: "keep" }
+  });
+  return state.draft!;
 }
 
 async function activeProvider(providerId?: string): Promise<ProviderProfile> {
@@ -245,9 +259,135 @@ async function activeProvider(providerId?: string): Promise<ProviderProfile> {
 }
 
 async function providerSecret(providerId: string): Promise<string> {
-  const secret = await secrets.get(providerId);
+  const profile = await activeProvider(providerId);
+  const secret = await secrets.get(providerCredentialRef(profile));
   if (!secret) throw new Error("请在插件 Provider 设置中填写 API Key。");
   return secret;
+}
+
+async function readProviderEditorState(): Promise<ProviderEditorState> {
+  const [activeRow, draftRow] = await Promise.all([
+    db.settingsMeta.get("activeProvider"),
+    db.settingsMeta.get("providerDraft")
+  ]);
+  const activeParsed = providerProfileSchema.safeParse(activeRow?.value);
+  const draftParsed = providerProfileSchema.safeParse(draftRow?.value);
+  const active = activeParsed.success ? activeParsed.data : null;
+  const draft = draftParsed.success ? draftParsed.data : null;
+  const [activeCredentialState, draftCredentialState] = await Promise.all([
+    active ? secrets.state(providerCredentialRef(active)) : Promise.resolve("missing" as const),
+    draft ? secrets.state(providerCredentialRef(draft)) : Promise.resolve("missing" as const)
+  ]);
+  return { active, draft, activeCredentialState, draftCredentialState };
+}
+
+async function saveProviderDraft(raw: ProviderCandidateInput): Promise<ProviderEditorState> {
+  const candidate = providerCandidateInputSchema.parse(raw);
+  const current = await readProviderEditorState();
+  const prepared = await prepareCandidateForStorage(candidate, true);
+  try {
+    await writeSetting(db, "providerDraft", prepared.profile);
+  } catch (error) {
+    if (prepared.createdCredentialRef) await secrets.remove(prepared.createdCredentialRef).catch(() => undefined);
+    throw error;
+  }
+  await cleanupCredential(current.draft, prepared.profile, prepared.createdCredentialRef, current.active ? providerCredentialRef(current.active) : undefined);
+  await recordHistory(db, "provider.draft.saved", `已保存未激活 Provider 草稿：${prepared.profile.name}`, prepared.profile.id);
+  await notifyChanged();
+  return readProviderEditorState();
+}
+
+async function testProviderCandidate(raw: ProviderCandidateInput): Promise<ProviderConnectionResult> {
+  const candidate = providerCandidateInputSchema.parse(raw);
+  const secret = await resolveCandidateSecret(candidate);
+  return createProviderAdapter(candidate.profile).testConnection(candidate.profile, secret);
+}
+
+async function probeProviderCandidate(raw: ProviderCandidateInput): Promise<ProviderCapabilities> {
+  const candidate = providerCandidateInputSchema.parse(raw);
+  const secret = await resolveCandidateSecret(candidate);
+  return createProviderAdapter(candidate.profile).probeCapabilities(candidate.profile, secret);
+}
+
+async function activateProviderCandidate(raw: ProviderCandidateInput): Promise<ProviderProfile> {
+  const candidate = providerCandidateInputSchema.parse(raw);
+  if (!candidate.profile.analysisModel && !candidate.profile.imageModel) throw new Error("请至少选择一个分析模型或图片模型。");
+  const secret = await resolveCandidateSecret(candidate);
+  const connection = await createProviderAdapter(candidate.profile).testConnection(candidate.profile, secret);
+  const current = await readProviderEditorState();
+  const prepared = await prepareCandidateForStorage(candidate);
+  const cachedAt = Date.now();
+  try {
+    await db.transaction("rw", [db.settingsMeta, db.historyEvents], async () => {
+      await writeSetting(db, "activeProvider", prepared.profile);
+      await writeSetting(db, `modelCache:${prepared.profile.id}`, {
+        cachedAt,
+        expiresAt: cachedAt + MODEL_CATALOG_CACHE_TTL_MS,
+        models: connection.models
+      });
+      await writeSetting(db, "providerCapabilities", { ...UNKNOWN_CAPABILITIES });
+      await db.settingsMeta.delete("providerDraft");
+      await recordHistory(db, "provider.activated", `已验证并启用 Provider：${prepared.profile.name}`, prepared.profile.id);
+    });
+  } catch (error) {
+    if (prepared.createdCredentialRef) await secrets.remove(prepared.createdCredentialRef).catch(() => undefined);
+    throw error;
+  }
+  // Secret storage uses read-modify-write maps; serialize removals so one cleanup cannot restore another ref.
+  await cleanupCredential(current.active, prepared.profile, prepared.createdCredentialRef);
+  await cleanupCredential(current.draft, prepared.profile, prepared.createdCredentialRef);
+  await notifyChanged();
+  return prepared.profile;
+}
+
+async function prepareCandidateForStorage(candidate: ProviderCandidateInput, isolateKeptCredential = true): Promise<{ profile: ProviderProfile; createdCredentialRef?: string }> {
+  const now = new Date().toISOString();
+  if (candidate.profile.kind === "comfyui") {
+    return {
+      profile: providerProfileSchema.parse({
+        ...candidate.profile,
+        credentialRef: `credential:none:${crypto.randomUUID()}`,
+        updatedAt: now
+      })
+    };
+  }
+  if (candidate.credential.action === "replace") {
+    const credentialRef = `credential:${crypto.randomUUID()}`;
+    await secrets.set(credentialRef, candidate.credential.secret.trim(), candidate.profile.rememberSecret);
+    return { profile: providerProfileSchema.parse({ ...candidate.profile, credentialRef, updatedAt: now }), createdCredentialRef: credentialRef };
+  }
+  if (candidate.credential.action === "clear") {
+    return { profile: providerProfileSchema.parse({ ...candidate.profile, credentialRef: `credential:empty:${crypto.randomUUID()}`, updatedAt: now }) };
+  }
+  const keptSecret = await secrets.get(providerCredentialRef(candidate.profile));
+  if (keptSecret && isolateKeptCredential) {
+    const credentialRef = `credential:${crypto.randomUUID()}`;
+    await secrets.set(credentialRef, keptSecret, candidate.profile.rememberSecret);
+    return { profile: providerProfileSchema.parse({ ...candidate.profile, credentialRef, updatedAt: now }), createdCredentialRef: credentialRef };
+  }
+  if (keptSecret) await secrets.set(providerCredentialRef(candidate.profile), keptSecret, candidate.profile.rememberSecret);
+  return { profile: providerProfileSchema.parse({ ...candidate.profile, updatedAt: now }) };
+}
+
+async function resolveCandidateSecret(candidate: ProviderCandidateInput): Promise<string> {
+  if (candidate.profile.kind === "comfyui") return "";
+  if (candidate.credential.action === "replace") return candidate.credential.secret.trim();
+  if (candidate.credential.action === "clear") throw new Error("当前 Provider 需要 API Key；请选择保留或替换密钥。");
+  const secret = await secrets.get(providerCredentialRef(candidate.profile));
+  if (!secret) throw new Error("当前配置没有可用 API Key；请选择替换密钥。");
+  return secret;
+}
+
+async function cleanupCredential(previous: ProviderProfile | null, next: ProviderProfile, ...protectedRefs: Array<string | undefined>): Promise<void> {
+  if (!previous) return;
+  const previousRef = providerCredentialRef(previous);
+  const nextRef = providerCredentialRef(next);
+  if (previousRef === nextRef || protectedRefs.includes(previousRef)) return;
+  await secrets.remove(previousRef).catch(() => undefined);
+}
+
+function providerCredentialRef(profile: ProviderProfile): string {
+  return profile.credentialRef ?? profile.id;
 }
 
 async function listModels(providerId: string, refresh = false): Promise<ModelDescriptor[]> {
@@ -345,10 +485,14 @@ async function analyzeAsset(assetId: string, mode: AnalysisMode): Promise<Analys
     return complete;
   } catch (error) {
     const interrupted = controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError");
+    const failure = interrupted
+      ? { category: "cancelled" as const, retryable: false, summary: "分析已由用户中断", guidance: "Lensflow 不会自动重发请求。" }
+      : toOperationFailure(error, profile.name);
     const failed: AnalysisRecord = {
       ...record,
       state: interrupted ? "interrupted" : "failed",
-      error: interrupted ? "分析已由用户中断；Lensflow 不会自动重发请求。" : error instanceof Error ? error.message : "分析失败",
+      error: failure.summary,
+      failure,
       updatedAt: new Date().toISOString()
     };
     await db.analyses.put(failed);
@@ -370,7 +514,8 @@ async function cancelAnalysis(analysisId: string): Promise<AnalysisRecord> {
   const record = await getAnalysis(analysisId);
   analysisControllers.get(analysisId)?.abort();
   if (["ready", "partial", "failed", "interrupted"].includes(record.state)) return record;
-  const next: AnalysisRecord = { ...record, state: "interrupted", error: "分析已由用户中断；Lensflow 不会自动重发请求。", updatedAt: new Date().toISOString() };
+  const failure = { category: "cancelled" as const, retryable: false, summary: "分析已由用户中断", guidance: "Lensflow 不会自动重发请求。" };
+  const next: AnalysisRecord = { ...record, state: "interrupted", error: failure.summary, failure, updatedAt: new Date().toISOString() };
   await db.analyses.put(next);
   await notifyChanged();
   return next;
@@ -484,7 +629,8 @@ async function runBatchChildren(batchId: string, indexes: number[], concurrency:
       const index = queue.shift();
       if (index === undefined) return;
       await submitChild(batchId, index).catch(async (error) => {
-        await updateChild(batchId, index, (child) => ({ ...child, state: "failed", error: error instanceof Error ? error.message : "生成失败", updatedAt: new Date().toISOString() }));
+        const failure = toOperationFailure(error);
+        await updateChild(batchId, index, (child) => ({ ...child, state: "failed", error: failure.summary, failure, updatedAt: new Date().toISOString() }));
       });
     }
   });
@@ -498,7 +644,7 @@ async function submitChild(batchId: string, index: number): Promise<void> {
   const profile = await activeProvider(batch.providerId);
   const secret = profile.kind === "comfyui" ? "" : await providerSecret(profile.id);
   const adapter = createProviderAdapter(profile);
-  await updateChild(batchId, index, (child) => ({ ...child, state: child.attempt ? "retrying" : "generating", error: undefined, updatedAt: new Date().toISOString() }));
+  await updateChild(batchId, index, (child) => ({ ...child, state: child.attempt ? "retrying" : "generating", error: undefined, failure: undefined, updatedAt: new Date().toISOString() }));
   const references = normalizeReferences((await db.references.bulkGet(batch.referenceIds)).filter((item): item is StudioReference => Boolean(item)));
   const prompt = references.length ? `${batch.prompt}\n\n参考约束（按优先级）：${references.map(referenceInstruction).join("；")}` : batch.prompt;
   const result = references.length
@@ -533,13 +679,15 @@ async function submitChild(batchId: string, index: number): Promise<void> {
     return;
   }
   const image = result.images[0];
+  const failure = result.error ? normalizeLegacyFailure(result.error, profile.name) : undefined;
   await updateChild(batchId, index, (child) => ({
     ...child,
     state: result.state === "succeeded" && image ? "ready" : "failed",
     dataUrl: image?.dataUrl,
     imageUrl: image?.url,
     revisedPrompt: image?.revisedPrompt,
-    error: result.error,
+    error: failure?.summary,
+    failure,
     remoteId: result.remoteId,
     remoteClientId: result.remoteClientId,
     progress: result.state === "succeeded" ? 1 : child.progress,
@@ -562,13 +710,15 @@ async function pollRemoteChild(batchId: string, child: GenerationChild): Promise
   const result = await createProviderAdapter(profile).retrieve(profile, secret, child.remoteId);
   if (result.state === "queued" || result.state === "running") return;
   const image = result.images[0];
+  const failure = result.error ? normalizeLegacyFailure(result.error, profile.name) : undefined;
   await updateChild(batchId, child.index, (current) => ({
     ...current,
     state: result.state === "succeeded" && image ? "ready" : "failed",
     dataUrl: image?.dataUrl,
     imageUrl: image?.url,
     revisedPrompt: image?.revisedPrompt,
-    error: result.error,
+    error: failure?.summary,
+    failure,
     progress: result.state === "succeeded" ? 1 : current.progress,
     updatedAt: new Date().toISOString()
   }));
@@ -740,7 +890,7 @@ async function routeBridgeMethod(request: BridgeRequest, payload: unknown): Prom
     case "version.get":
       return { version: LENSFLOW_BRIDGE_VERSION, extensionVersion: browser.runtime.getManifest().version };
     case "snapshot.get":
-      return readLiveStudioSnapshot();
+      return studioSnapshotForBridge(await readLiveStudioSnapshot());
     case "task.create":
       return createBatch(payload as Parameters<typeof createBatch>[0]);
     case "task.cancel":

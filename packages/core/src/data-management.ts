@@ -15,6 +15,9 @@ import {
 } from "@lensflow/contracts";
 import {
   LensflowDatabase,
+  sanitizeAnalysisFailure,
+  sanitizeGenerationFailures,
+  sanitizeHistoryFailure,
   type AnalysisRecord,
   type CaptureRecord,
   type CollectionRecord,
@@ -95,6 +98,11 @@ function safeSettingsRows(rows: SettingsMetaRecord[]): SettingsMetaRecord[] {
     .map((row) => ({ ...row, value: redactSensitive(row.value) }));
 }
 
+function analysisForBackup(row: AnalysisRecord): AnalysisRecord {
+  const { rawResponse: _rawResponse, ...safe } = sanitizeAnalysisFailure(row);
+  return safe;
+}
+
 export function redactSensitive(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactSensitive);
   if (!value || typeof value !== "object") return value;
@@ -126,13 +134,13 @@ export async function createLensflowBackup(
     exportedAt,
     tables: {
       captures,
-      analyses,
+      analyses: analyses.map(analysisForBackup),
       prompts,
       references,
-      generationJobs,
+      generationJobs: generationJobs.map(sanitizeGenerationFailures),
       assets,
       collections,
-      historyEvents,
+      historyEvents: historyEvents.map(sanitizeHistoryFailure),
       settingsMeta: safeSettingsRows(settingsMeta)
     }
   };
@@ -154,7 +162,7 @@ export async function importLensflowBackup(
     await db.transaction("rw", [db.analyses, db.prompts, db.settingsMeta], async () => {
       if (mode === "replace") await Promise.all([db.analyses.clear(), db.prompts.clear()]);
       await Promise.all([
-        db.analyses.bulkPut(legacy.analyses),
+        db.analyses.bulkPut(legacy.analyses.map(sanitizeAnalysisFailure)),
         db.prompts.bulkPut(legacy.prompts)
       ]);
       for (const [key, value] of Object.entries(legacy.settings)) {
@@ -182,8 +190,8 @@ export async function importLensflowBackup(
     await Promise.all([
       db.captures.bulkPut(tables.captures as CaptureRecord[]),
       db.analyses.bulkPut(tables.analyses.map((row): AnalysisRecord => {
-        if ("assetId" in row) return row as AnalysisRecord;
-        return {
+        if ("assetId" in row) return sanitizeAnalysisFailure(row as AnalysisRecord);
+        return sanitizeAnalysisFailure({
           id: row.id,
           assetId: row.captureId,
           captureId: row.captureId,
@@ -195,14 +203,14 @@ export async function importLensflowBackup(
           error: "从 Lensflow v1 备份迁移；请重新分析以生成 v2 结构化结果。",
           createdAt: row.createdAt,
           updatedAt: row.createdAt
-        };
+        });
       })),
       db.prompts.bulkPut(tables.prompts as PromptRecord[]),
       db.references.bulkPut(tables.references),
-      db.generationJobs.bulkPut(tables.generationJobs),
+      db.generationJobs.bulkPut(tables.generationJobs.map(sanitizeGenerationFailures)),
       db.assets.bulkPut(tables.assets),
       db.collections.bulkPut(tables.collections as CollectionRecord[]),
-      db.historyEvents.bulkPut(tables.historyEvents as HistoryEventRecord[]),
+      db.historyEvents.bulkPut((tables.historyEvents as HistoryEventRecord[]).map(sanitizeHistoryFailure)),
       db.settingsMeta.bulkPut(settingsMeta)
     ]);
   });

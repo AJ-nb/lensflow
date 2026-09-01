@@ -13,8 +13,11 @@ import type {
   KeywordCard,
   MaintenanceSummary,
   ModelDescriptor,
+  OperationFailure,
+  ProviderCandidateInput,
   ProviderCapabilities,
   ProviderConnectionResult,
+  ProviderEditorState,
   ProviderProfile,
   ReferenceKind,
   SavePromptInput,
@@ -33,14 +36,25 @@ import {
   originPattern,
   pruneHistory,
   recordHistory,
-  setHistoryRetention
+  setHistoryRetention,
+  toOperationFailure
 } from "@lensflow/core";
 import type { RuntimeRequest, RuntimeResponse } from "../shared/types";
 
 async function send<T>(request: RuntimeRequest): Promise<T> {
   const response = await browser.runtime.sendMessage(request) as RuntimeResponse<T>;
-  if (!response?.ok) throw new Error(response?.error || "扩展后台没有返回响应。");
+  if (!response?.ok) {
+    const failure = response?.failure ?? toOperationFailure(response?.error || "扩展后台没有返回响应。");
+    throw new StudioRuntimeError(failure);
+  }
   return response.data;
+}
+
+export class StudioRuntimeError extends Error {
+  constructor(readonly failure: OperationFailure) {
+    super(failure.summary);
+    this.name = "StudioRuntimeError";
+  }
 }
 
 async function ensureOriginPermission(profile: ProviderProfile): Promise<void> {
@@ -86,9 +100,27 @@ export class ExtensionStudioRuntime implements StudioRuntime {
     await send({ type: "LENSFLOW_DELETE_REFERENCE", id });
   }
 
-  async saveProvider(profile: ProviderProfile, secret?: string): Promise<ProviderProfile> {
-    await ensureOriginPermission(profile);
-    return send({ type: "LENSFLOW_SAVE_PROVIDER", profile, secret });
+  async loadProviderEditorState(): Promise<ProviderEditorState> {
+    return send({ type: "LENSFLOW_PROVIDER_EDITOR_STATE" });
+  }
+
+  async saveProviderDraft(candidate: ProviderCandidateInput): Promise<ProviderEditorState> {
+    return send({ type: "LENSFLOW_SAVE_PROVIDER_DRAFT", candidate });
+  }
+
+  async testProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderConnectionResult> {
+    await ensureOriginPermission(candidate.profile);
+    return send({ type: "LENSFLOW_TEST_PROVIDER_CANDIDATE", candidate });
+  }
+
+  async probeProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderCapabilities> {
+    await ensureOriginPermission(candidate.profile);
+    return send({ type: "LENSFLOW_PROBE_PROVIDER_CANDIDATE", candidate });
+  }
+
+  async activateProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderProfile> {
+    await ensureOriginPermission(candidate.profile);
+    return send({ type: "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE", candidate });
   }
 
   async listModels(providerId: string, refresh?: boolean): Promise<ModelDescriptor[]> {

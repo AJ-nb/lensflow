@@ -5,6 +5,7 @@ export * from "./data-management";
 export * from "./legacy-import";
 export * from "./onboarding";
 export * from "./image-measure";
+export * from "./operation-failure";
 export * from "./providers";
 export * from "./product-analysis";
 export * from "./studio-logic";

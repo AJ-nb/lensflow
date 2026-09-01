@@ -30,14 +30,30 @@ describe("local backup and diagnostics", () => {
 
   it("exports all nine tables without provider secrets", async () => {
     const db = database();
+    const now = "2026-08-29T00:00:00.000Z";
     await db.settingsMeta.bulkPut([
-      { key: "activeProvider", value: { id: "p", name: "Provider", apiKey: "secret", rememberSecret: true }, updatedAt: "2026-08-29T00:00:00.000Z" },
-      { key: "providerSecrets", value: { p: "secret" }, updatedAt: "2026-08-29T00:00:00.000Z" }
+      { key: "activeProvider", value: { id: "p", name: "Provider", apiKey: "secret", rememberSecret: true }, updatedAt: now },
+      { key: "providerSecrets", value: { p: "secret" }, updatedAt: now }
     ]);
-    const output = await createLensflowBackup(db, "0.1.0", "2026-08-29T00:00:00.000Z");
+    await db.analyses.put({
+      id: "analysis-with-raw-response",
+      assetId: "asset-1",
+      mode: "quick",
+      state: "failed",
+      providerId: "p",
+      model: "vision",
+      rawResponse: { providerBody: "raw-provider-body" },
+      error: "Provider 请求失败 (502)：<!DOCTYPE html><body>Bad gateway</body>",
+      createdAt: now,
+      updatedAt: now
+    });
+    const output = await createLensflowBackup(db, "0.1.0", now);
     const parsed = JSON.parse(output.text);
     expect(Object.keys(parsed.tables)).toHaveLength(9);
     expect(output.text).not.toContain("secret");
+    expect(output.text).not.toContain("raw-provider-body");
+    expect(output.text).not.toContain("<!DOCTYPE");
+    expect(parsed.tables.analyses[0]).not.toHaveProperty("rawResponse");
     expect(parsed.tables.settingsMeta).toHaveLength(1);
   });
 

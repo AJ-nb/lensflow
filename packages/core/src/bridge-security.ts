@@ -1,7 +1,24 @@
-import type { AnalysisRecord, BridgeRequest } from "@lensflow/contracts";
+import type { AnalysisRecord, BridgeRequest, OperationFailure, StudioSnapshot } from "@lensflow/contracts";
 
 export function analysisRecordForBridge(record: AnalysisRecord): AnalysisRecord {
   const { rawResponse: _rawResponse, ...safe } = record;
+  return { ...safe, failure: failureForBridge(record.failure) };
+}
+
+export function studioSnapshotForBridge(snapshot: StudioSnapshot): StudioSnapshot {
+  return {
+    ...snapshot,
+    analyses: snapshot.analyses.map((analysis) => ({ ...analysis, failure: failureForBridge(analysis.failure) })),
+    batches: snapshot.batches.map((batch) => ({
+      ...batch,
+      children: batch.children.map((child) => ({ ...child, failure: failureForBridge(child.failure) }))
+    }))
+  };
+}
+
+function failureForBridge(failure?: OperationFailure): OperationFailure | undefined {
+  if (!failure) return undefined;
+  const { technicalDetails: _technicalDetails, ...safe } = failure;
   return safe;
 }
 

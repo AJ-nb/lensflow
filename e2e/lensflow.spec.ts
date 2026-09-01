@@ -11,7 +11,16 @@ const capabilities = {
   cancellation: "unsupported"
 } as const;
 
-function snapshot(options: { keyword?: boolean; childCount?: number; partial?: boolean; analyzedAsset?: boolean } = {}) {
+const upstreamFailure = {
+  category: "upstream",
+  status: 502,
+  retryable: true,
+  summary: "彼源暂时不可用",
+  guidance: "这是上游服务错误。当前活动配置和密钥未更改；请稍后手动重试或切换 Provider。",
+  requestId: "cf-ray-demo-502"
+} as const;
+
+function snapshot(options: { keyword?: boolean; childCount?: number; partial?: boolean; analyzedAsset?: boolean; failedAnalysis?: boolean } = {}) {
   const childCount = options.childCount ?? 0;
   const children = Array.from({ length: childCount }, (_, index) => {
     const failed = Boolean(options.partial && index === childCount - 2);
@@ -23,6 +32,7 @@ function snapshot(options: { keyword?: boolean; childCount?: number; partial?: b
       state: failed ? "failed" : generating ? "generating" : "ready",
       imageUrl: failed || generating ? undefined : "/lensflow/brand/lensflow-mark.png",
       error: failed ? "Provider 处理失败" : undefined,
+      failure: failed ? upstreamFailure : undefined,
       progress: generating ? 0.46 : undefined,
       attempt: 0,
       updatedAt: now
@@ -50,9 +60,11 @@ function snapshot(options: { keyword?: boolean; childCount?: number; partial?: b
     },
     capabilities,
     keywords: options.keyword ? [{ id: "keyword-1", axis: "style", text: "胶片质感", locked: false, createdAt: now }] : [],
-    analyses: options.analyzedAsset ? [{ id: "analysis-1", assetId: "asset-1", mode: "quick", state: "ready", providerId: "provider", model: "analysis-model", contentKind: "product", summary: "白色便携音箱", promptZh: "白色便携音箱，产品摄影", promptEn: "white portable speaker, product photography", createdAt: now, updatedAt: now }] : [],
+    analyses: options.failedAnalysis
+      ? [{ id: "analysis-1", assetId: "asset-1", mode: "quick", state: "failed", providerId: "provider", model: "analysis-model", error: upstreamFailure.summary, failure: upstreamFailure, createdAt: now, updatedAt: now }]
+      : options.analyzedAsset ? [{ id: "analysis-1", assetId: "asset-1", mode: "quick", state: "ready", providerId: "provider", model: "analysis-model", contentKind: "product", summary: "白色便携音箱", promptZh: "白色便携音箱，产品摄影", promptEn: "white portable speaker, product photography", createdAt: now, updatedAt: now }] : [],
     prompts: [],
-    assets: options.analyzedAsset ? [{ id: "asset-1", kind: "capture", name: "便携音箱.png", previewUrl: "/lensflow/brand/lensflow-mark.png", metadata: { width: { value: 1200, source: "measured" }, height: { value: 800, source: "measured" }, aspectRatio: { value: "3:2", source: "measured" }, palette: { value: [{ hex: "#ffffff", proportion: 1 }], source: "measured" } }, createdAt: now, updatedAt: now }] : [],
+    assets: options.analyzedAsset || options.failedAnalysis ? [{ id: "asset-1", kind: "capture", name: "便携音箱.png", previewUrl: "/lensflow/brand/lensflow-mark.png", metadata: { width: { value: 1200, source: "measured" }, height: { value: 800, source: "measured" }, aspectRatio: { value: "3:2", source: "measured" }, palette: { value: [{ hex: "#ffffff", proportion: 1 }], source: "measured" } }, createdAt: now, updatedAt: now }] : [],
     references: [],
     batches: childCount ? [{
       id: "batch-1",
@@ -67,7 +79,7 @@ function snapshot(options: { keyword?: boolean; childCount?: number; partial?: b
     }] : [],
     historyEvents: [],
     storage: { usage: 1024, quota: 1024 * 1024, persisted: true },
-    captureHandoff: options.analyzedAsset ? { assetId: "asset-1", intent: "analyze", createdAt: now } : null
+    captureHandoff: options.analyzedAsset || options.failedAnalysis ? { assetId: "asset-1", intent: "analyze", createdAt: now } : null
   };
 }
 
@@ -120,7 +132,7 @@ async function installBridgeMock(page: Page, initialSnapshot: ReturnType<typeof 
         if (request.method === "task.retryFailed") {
           const batch = state.batches.find((item) => item.id === request.payload.batchId);
           if (batch) {
-            batch.children = batch.children.map((child) => child.state === "failed" ? { ...child, state: "retrying", error: undefined } : child);
+            batch.children = batch.children.map((child) => child.state === "failed" ? { ...child, state: "retrying", error: undefined, failure: undefined } : child);
             batch.state = "retrying";
           }
           data = batch;
@@ -294,6 +306,27 @@ test("analyzed product shows measured evidence and sends a bilingual prompt to C
   await expect(page.getByRole("textbox", { name: "正向提示词" })).toHaveValue("白色便携音箱，产品摄影");
   await page.getByRole("button", { name: /送入组合/ }).click();
   await expect(page.getByPlaceholder(/描述主体/)).toHaveValue("白色便携音箱，产品摄影");
+});
+
+test("analysis 502 stays bounded and never renders upstream HTML", async ({ page }) => {
+  await installBridgeMock(page, snapshot({ failedAnalysis: true }));
+  await page.goto("studio");
+  const failure = page.locator(".lf-analysis-content .lf-failure-panel");
+  await expect(failure).toBeVisible();
+  await expect(failure.getByText("分析未完成")).toBeVisible();
+  await expect(failure.getByText("彼源暂时不可用")).toBeVisible();
+  await expect(failure.getByText("HTTP 502")).toBeVisible();
+  await expect(failure.getByText(/cf-ray-demo-502/)).toBeVisible();
+  await expect(page.getByText(/<!doctype|cloudflare-status|<html/i)).toHaveCount(0);
+  expect(await failure.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await page.screenshot({ path: "output/playwright/lensflow-analysis-502-desktop.png", fullPage: false });
+
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect(failure).toBeVisible();
+  expect(await page.locator(".lf-main").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  expect(await failure.locator(".lf-failure-actions").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await failure.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "output/playwright/lensflow-analysis-502-360.png", fullPage: false });
 });
 
 test("collection exposes keyword, prompt, palette and work assets without mixing them", async ({ page }) => {

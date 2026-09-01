@@ -14,6 +14,7 @@ import {
   type ProviderTaskResult
 } from "@lensflow/contracts";
 import { endpointUrl } from "./base-url";
+import { failureFromHttpResponse, sanitizeTechnicalDetails } from "./operation-failure";
 
 const PROBE_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2VQAAAABJRU5ErkJggg==";
 const PROBE_PNG_DATA_URL = `data:image/png;base64,${PROBE_PNG_BASE64}`;
@@ -30,9 +31,11 @@ export function isModelCatalogCacheFresh(value: ModelCatalogCache | undefined, n
 }
 
 export class ProviderHttpError extends Error {
-  constructor(message: string, readonly status: number, readonly body?: unknown) {
-    super(message);
+  readonly status: number;
+  constructor(readonly failure: import("@lensflow/contracts").OperationFailure) {
+    super(failure.summary);
     this.name = "ProviderHttpError";
+    this.status = failure.status ?? 0;
   }
 }
 
@@ -43,16 +46,30 @@ function headers(secret: string, json = true): HeadersInit {
   };
 }
 
-async function parseResponse(response: Response): Promise<unknown> {
+async function parseResponse(response: Response, providerName = "Provider"): Promise<unknown> {
   const type = response.headers.get("content-type") ?? "";
-  const body = type.includes("json") ? await response.json() : await response.text();
-  if (!response.ok) {
-    const detail = body && typeof body === "object" && "error" in body
-      ? JSON.stringify((body as { error: unknown }).error)
-      : String(body || response.statusText);
-    throw new ProviderHttpError(`Provider 请求失败 (${response.status})：${detail}`, response.status, body);
+  const text = await response.text();
+  let body: unknown = text;
+  const looksJson = /^\s*[\[{]/.test(text);
+  if (text && (type.includes("json") || looksJson)) {
+    try { body = JSON.parse(text); }
+    catch {
+      if (response.ok) {
+        throw new ProviderHttpError({
+          category: "invalid-response",
+          status: response.status,
+          retryable: false,
+          summary: `${providerName} 返回了无效 JSON`,
+          guidance: "请检查接口兼容性和协议模式。",
+          technicalDetails: sanitizeTechnicalDetails(text)
+        });
+      }
+    }
   }
-  return body;
+  if (!response.ok) {
+    throw new ProviderHttpError(failureFromHttpResponse(response, body || response.statusText, providerName));
+  }
+  return text ? body : {};
 }
 
 function extractImages(body: unknown): ProviderImage[] {
@@ -118,7 +135,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
 
   async listModels(profile: ProviderProfile, secret: string, signal?: AbortSignal): Promise<ModelDescriptor[]> {
     const response = await fetch(endpointUrl(profile.baseUrl, "models"), { headers: headers(secret), signal });
-    const body = await parseResponse(response);
+    const body = await parseResponse(response, profile.name);
     const raw = body && typeof body === "object" && Array.isArray((body as { data?: unknown }).data)
       ? (body as { data: unknown[] }).data
       : [];
@@ -228,7 +245,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
           ...(input.schema ? { text: { format: { type: "json_schema", name: "lensflow_analysis", strict: true, schema: input.schema } } } : {})
         })
       });
-      const body = await parseResponse(response) as { output_text?: unknown; output?: unknown };
+      const body = await parseResponse(response, profile.name) as { output_text?: unknown; output?: unknown };
       const text = typeof body.output_text === "string" ? body.output_text : "";
       return { text, structured: input.schema ? parseJson(text) : undefined, model, raw: body.output };
     }
@@ -244,7 +261,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
         ...(input.schema ? { response_format: { type: "json_schema", json_schema: { name: "lensflow_analysis", strict: true, schema: input.schema } } } : {})
       })
     });
-    const body = await parseResponse(response) as { choices?: Array<{ message?: { content?: unknown } }> };
+    const body = await parseResponse(response, profile.name) as { choices?: Array<{ message?: { content?: unknown } }> };
     const text = body.choices?.[0]?.message?.content;
     const output = typeof text === "string" ? text : "";
     return { text: output, structured: input.schema ? parseJson(output) : undefined, model, raw: body };
@@ -257,7 +274,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       signal: input.signal,
       body: JSON.stringify({ model: input.model, prompt: input.prompt, n: input.count, size: input.size, quality: input.quality })
     });
-    const body = await parseResponse(response);
+    const body = await parseResponse(response, profile.name);
     const images = extractImages(body);
     return { state: images.length ? "succeeded" : "failed", images, error: images.length ? undefined : "Provider 未返回图片。", raw: body };
   }
@@ -276,7 +293,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       signal: input.signal,
       body: form
     });
-    const body = await parseResponse(response);
+    const body = await parseResponse(response, profile.name);
     const images = extractImages(body);
     return { state: images.length ? "succeeded" : "failed", images, error: images.length ? undefined : "Provider 未返回图片。", raw: body };
   }
@@ -321,7 +338,7 @@ export class BiyuanAdapter extends OpenAICompatibleAdapter {
       signal: input.signal,
       body: JSON.stringify({ model: input.model, prompt: input.prompt, n: input.count, size: input.size, quality: input.quality })
     });
-    return parseAsyncTask(await parseResponse(response));
+    return parseAsyncTask(await parseResponse(response, profile.name));
   }
 
   override async edit(profile: ProviderProfile, secret: string, input: EditInput): Promise<ProviderTaskResult> {
@@ -339,7 +356,7 @@ export class BiyuanAdapter extends OpenAICompatibleAdapter {
       signal: input.signal,
       body: form
     });
-    return parseAsyncTask(await parseResponse(response));
+    return parseAsyncTask(await parseResponse(response, profile.name));
   }
 
   override async retrieve(profile: ProviderProfile, secret: string, remoteId: string, signal?: AbortSignal): Promise<ProviderTaskResult> {
@@ -347,7 +364,7 @@ export class BiyuanAdapter extends OpenAICompatibleAdapter {
       headers: headers(secret),
       signal
     });
-    const body = await parseResponse(response);
+    const body = await parseResponse(response, profile.name);
     return parseAsyncTask(body, remoteId);
   }
 }
@@ -388,7 +405,7 @@ export class ComfyUIAdapter implements ProviderAdapter {
 
   async listModels(profile: ProviderProfile, _secret: string, signal?: AbortSignal): Promise<ModelDescriptor[]> {
     const response = await fetch(endpointUrl(profile.baseUrl, "object_info"), { signal });
-    const body = await parseResponse(response);
+    const body = await parseResponse(response, profile.name);
     const loaders = body && typeof body === "object" ? Object.entries(body as Record<string, unknown>) : [];
     const names = new Set<string>();
     for (const [, raw] of loaders) {
@@ -426,7 +443,7 @@ export class ComfyUIAdapter implements ProviderAdapter {
       signal: input.signal,
       body: JSON.stringify({ prompt: workflow, client_id: clientId })
     });
-    const body = await parseResponse(response) as { prompt_id?: unknown };
+    const body = await parseResponse(response, profile.name) as { prompt_id?: unknown };
     return { remoteId: typeof body.prompt_id === "string" ? body.prompt_id : undefined, remoteClientId: clientId, state: "queued", images: [], raw: body };
   }
 
@@ -436,7 +453,7 @@ export class ComfyUIAdapter implements ProviderAdapter {
 
   async retrieve(profile: ProviderProfile, _secret: string, remoteId: string, signal?: AbortSignal): Promise<ProviderTaskResult> {
     const response = await fetch(endpointUrl(profile.baseUrl, `history/${encodeURIComponent(remoteId)}`), { signal });
-    const body = await parseResponse(response) as Record<string, unknown>;
+    const body = await parseResponse(response, profile.name) as Record<string, unknown>;
     const task = body[remoteId];
     if (!task || typeof task !== "object") return { remoteId, state: "running", images: [], raw: body };
     const outputs = (task as { outputs?: Record<string, { images?: Array<Record<string, unknown>> }> }).outputs ?? {};
@@ -453,7 +470,7 @@ export class ComfyUIAdapter implements ProviderAdapter {
 
   async cancel(profile: ProviderProfile, _secret: string, _remoteId: string, signal?: AbortSignal): Promise<boolean> {
     const response = await fetch(endpointUrl(profile.baseUrl, "interrupt"), { method: "POST", signal });
-    await parseResponse(response);
+    await parseResponse(response, profile.name);
     return true;
   }
 

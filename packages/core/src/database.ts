@@ -13,6 +13,7 @@ import {
   type StudioReference,
   type StudioSnapshot
 } from "@lensflow/contracts";
+import { normalizeLegacyFailure, sanitizeTechnicalDetails } from "./operation-failure";
 export type { AnalysisRecord } from "@lensflow/contracts";
 
 export interface CaptureRecord {
@@ -102,24 +103,69 @@ export class LensflowDatabase extends Dexie {
         row.updatedAt = typeof row.updatedAt === "string" ? row.updatedAt : createdAt;
       });
     });
+    this.version(3).stores({
+      captures: "id, createdAt, sha256, pageUrl",
+      analyses: "id, assetId, captureId, state, mode, providerId, updatedAt",
+      prompts: "id, kind, axis, sourceAssetId, sourceAnalysisId, variantKind, createdAt, updatedAt",
+      references: "id, kind, createdAt, enabled",
+      generationJobs: "id, state, providerId, createdAt, updatedAt",
+      assets: "id, kind, sourceTaskId, createdAt, updatedAt",
+      collections: "id, createdAt, updatedAt",
+      historyEvents: "id, type, entityId, createdAt",
+      settingsMeta: "key, updatedAt"
+    }).upgrade(async (transaction) => {
+      await Promise.all([
+        transaction.table("analyses").toCollection().modify((row: AnalysisRecord) => Object.assign(row, sanitizeAnalysisFailure(row))),
+        transaction.table("generationJobs").toCollection().modify((row: GenerationBatch) => Object.assign(row, sanitizeGenerationFailures(row))),
+        transaction.table("historyEvents").toCollection().modify((row: HistoryEvent) => Object.assign(row, sanitizeHistoryFailure(row)))
+      ]);
+    });
   }
 }
 
-export function summarizeAnalysis(row: AnalysisRecord): AnalysisSummary {
+export function sanitizeAnalysisFailure(row: AnalysisRecord): AnalysisRecord {
+  if (!row.error && !row.failure) return row;
+  const failure = row.failure ?? normalizeLegacyFailure(row.error ?? "分析失败");
   return {
-    id: row.id,
-    assetId: row.assetId,
-    mode: row.mode,
-    state: row.state,
-    providerId: row.providerId,
-    model: row.model,
-    error: row.error,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    contentKind: row.result?.classification.kind,
-    summary: row.result?.summary.value ?? undefined,
-    promptZh: row.result?.prompts.positive.zh,
-    promptEn: row.result?.prompts.positive.en
+    ...row,
+    error: failure.summary,
+    failure: { ...failure, technicalDetails: sanitizeTechnicalDetails(failure.technicalDetails) }
+  };
+}
+
+export function sanitizeGenerationFailures(batch: GenerationBatch): GenerationBatch {
+  return {
+    ...batch,
+    children: batch.children.map((child) => {
+      if (!child.error && !child.failure) return child;
+      const failure = child.failure ?? normalizeLegacyFailure(child.error ?? "生成失败");
+      return { ...child, error: failure.summary, failure: { ...failure, technicalDetails: sanitizeTechnicalDetails(failure.technicalDetails) } };
+    })
+  };
+}
+
+export function sanitizeHistoryFailure(event: HistoryEvent): HistoryEvent {
+  if (!event.message || (!/<(?:!doctype|html|head|body)\b/i.test(event.message) && event.message.length <= 500)) return event;
+  return { ...event, message: normalizeLegacyFailure(event.message).summary };
+}
+
+export function summarizeAnalysis(row: AnalysisRecord): AnalysisSummary {
+  const sanitized = sanitizeAnalysisFailure(row);
+  return {
+    id: sanitized.id,
+    assetId: sanitized.assetId,
+    mode: sanitized.mode,
+    state: sanitized.state,
+    providerId: sanitized.providerId,
+    model: sanitized.model,
+    error: sanitized.error,
+    failure: sanitized.failure,
+    createdAt: sanitized.createdAt,
+    updatedAt: sanitized.updatedAt,
+    contentKind: sanitized.result?.classification.kind,
+    summary: sanitized.result?.summary.value ?? undefined,
+    promptZh: sanitized.result?.prompts.positive.zh,
+    promptEn: sanitized.result?.prompts.positive.en
   };
 }
 

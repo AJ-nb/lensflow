@@ -14,7 +14,6 @@ import {
   type KeywordCard,
   type ProviderCapabilities,
   type ProviderConnectionResult,
-  type ProviderProfile,
   type ReferenceKind,
   type SavePromptInput,
   type SavedPrompt,
@@ -156,7 +155,11 @@ export class BridgeStudioRuntime implements StudioRuntime {
     return this.rpc("asset.put", { kind: "reference", name: "参考资产", metadata: { action: "toggle-reference", id, enabled } });
   }
   async deleteReference(id: string): Promise<void> { await this.rpc("asset.delete", { id }); }
-  async saveProvider(_profile: ProviderProfile, _secret?: string): Promise<ProviderProfile> { throw new Error("请在 Lensflow 插件中配置 Provider 和 API Key。"); }
+  async loadProviderEditorState(): Promise<never> { throw new Error("Provider 配置只能在插件中执行。"); }
+  async saveProviderDraft(): Promise<never> { throw new Error("Provider 草稿只能在插件中保存。"); }
+  async testProviderCandidate(): Promise<never> { throw new Error("连接检测只能在插件中执行。"); }
+  async probeProviderCandidate(): Promise<never> { throw new Error("能力检测只能在插件中主动执行。"); }
+  async activateProviderCandidate(): Promise<never> { throw new Error("Provider 只能在插件中启用。"); }
   async listModels(): Promise<never[]> { throw new Error("模型发现只能在插件 Provider 设置中执行。"); }
   async testConnection(): Promise<ProviderConnectionResult> { throw new Error("连接检测只能在插件中执行。"); }
   async probeCapabilities(): Promise<ProviderCapabilities> { throw new Error("能力检测只能在插件中主动执行。"); }

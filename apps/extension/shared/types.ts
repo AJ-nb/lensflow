@@ -6,6 +6,8 @@ import type {
   AnalysisMode as ProductAnalysisMode,
   BatchSelection,
   GenerationBatch,
+  OperationFailure,
+  ProviderCandidateInput,
   ProviderProfile,
   ProviderConnectionResult,
   SavePromptInput,
@@ -363,6 +365,11 @@ export type RuntimeRequest =
   | { type: "GENERATE_THREE_VIEW"; source: ImageSource; analysis: VisualAnalysis; measured: MeasuredImageData }
   | { type: "LENSFLOW_SNAPSHOT" }
   | { type: "LENSFLOW_SAVE_PROVIDER"; profile: ProviderProfile; secret?: string }
+  | { type: "LENSFLOW_PROVIDER_EDITOR_STATE" }
+  | { type: "LENSFLOW_SAVE_PROVIDER_DRAFT"; candidate: ProviderCandidateInput }
+  | { type: "LENSFLOW_TEST_PROVIDER_CANDIDATE"; candidate: ProviderCandidateInput }
+  | { type: "LENSFLOW_PROBE_PROVIDER_CANDIDATE"; candidate: ProviderCandidateInput }
+  | { type: "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE"; candidate: ProviderCandidateInput }
   | { type: "LENSFLOW_LIST_MODELS"; providerId: string; refresh?: boolean }
   | { type: "LENSFLOW_TEST_PROVIDER"; providerId: string }
   | { type: "LENSFLOW_PROBE_PROVIDER"; providerId: string }
@@ -391,4 +398,4 @@ export type LensflowRuntimeData = StudioSnapshot | GenerationBatch | ProviderPro
 
 export type RuntimeResponse<T = unknown> =
   | { ok: true; data: T }
-  | { ok: false; error: string; code?: string };
+  | { ok: false; error: string; failure?: OperationFailure; code?: string };

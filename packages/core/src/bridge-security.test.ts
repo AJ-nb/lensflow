@@ -28,11 +28,13 @@ describe("bridge replay guard", () => {
       model: "vision-model",
       rawResponse: { authorization: "must-not-cross", providerPayload: { id: "remote-1" } },
       error: "schema failed",
+      failure: { category: "invalid-response", retryable: false, summary: "schema failed", guidance: "check schema", technicalDetails: "private upstream body" },
       createdAt: "2026-08-30T00:00:00.000Z",
       updatedAt: "2026-08-30T00:00:00.000Z"
     };
 
     expect(analysisRecordForBridge(record)).not.toHaveProperty("rawResponse");
     expect(JSON.stringify(analysisRecordForBridge(record))).not.toContain("must-not-cross");
+    expect(JSON.stringify(analysisRecordForBridge(record))).not.toContain("private upstream body");
   });
 });

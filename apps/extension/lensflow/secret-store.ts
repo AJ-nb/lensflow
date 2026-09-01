@@ -14,6 +14,18 @@ export class ChromeProviderSecretStore implements ProviderSecretStore {
     return sessionMap[providerId] || localMap[providerId];
   }
 
+  async state(providerId: string): Promise<"missing" | "session" | "device"> {
+    const [session, local] = await Promise.all([
+      browser.storage.session.get(STORAGE_KEYS.sessionProviderSecrets),
+      browser.storage.local.get(STORAGE_KEYS.providerSecrets)
+    ]);
+    const sessionMap = (session[STORAGE_KEYS.sessionProviderSecrets] ?? {}) as SecretMap;
+    const localMap = (local[STORAGE_KEYS.providerSecrets] ?? {}) as SecretMap;
+    if (sessionMap[providerId]) return "session";
+    if (localMap[providerId]) return "device";
+    return "missing";
+  }
+
   async set(providerId: string, secret: string, persist: boolean): Promise<void> {
     const [session, local] = await Promise.all([
       browser.storage.session.get(STORAGE_KEYS.sessionProviderSecrets),

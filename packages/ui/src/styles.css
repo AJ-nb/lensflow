@@ -156,6 +156,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lf-analysis-progress > div, .lf-analysis-error > div { display: grid; gap: 5px; }
 .lf-analysis-progress span, .lf-analysis-error span { color: var(--lf-muted); line-height: 1.5; }
 .lf-analysis-error { color: var(--lf-danger); }
+.lf-failure-panel { --failure-color: var(--lf-danger); min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: start; gap: 12px; margin: 12px 0; padding: 14px; color: var(--lf-ink); background: #fff9f8; border: 1px solid #e7c8c3; border-left: 4px solid var(--failure-color); border-radius: var(--lf-radius); }
+.lf-failure-panel.state-upstream, .lf-failure-panel.state-rate-limit, .lf-failure-panel.state-timeout { --failure-color: var(--lf-warning); background: #fffaf0; border-color: #ead5ae; }
+.lf-failure-panel.state-network { --failure-color: #5b6575; background: #f7f8fa; border-color: #d5d9df; }
+.lf-failure-panel.state-cancelled { --failure-color: var(--lf-muted); background: #f5f3ef; border-color: var(--lf-line); }
+.lf-failure-icon { width: 28px; height: 28px; display: grid; place-items: center; color: var(--failure-color); background: white; border: 1px solid currentColor; border-radius: 50%; }
+.lf-failure-copy { min-width: 0; display: grid; gap: 5px; }
+.lf-failure-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.lf-failure-heading span { padding: 2px 5px; color: var(--failure-color); background: white; border: 1px solid currentColor; border-radius: 3px; font-size: 10px; font-weight: 800; }
+.lf-failure-copy p { margin: 0; color: #5f595e; line-height: 1.55; overflow-wrap: anywhere; }
+.lf-failure-copy small { color: var(--lf-muted); overflow-wrap: anywhere; }
+.lf-failure-copy code { color: var(--lf-ink); }
+.lf-failure-copy details { margin-top: 3px; color: var(--lf-muted); }
+.lf-failure-copy summary { width: max-content; cursor: pointer; font-weight: 700; }
+.lf-failure-copy pre { max-height: 160px; margin: 8px 0 0; padding: 9px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #4e494e; background: #f0eeea; border-radius: 4px; font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.lf-failure-actions { min-width: 132px; display: grid; grid-template-columns: 1fr; gap: 6px; }
+.lf-failure-actions .lf-button { justify-content: flex-start; }
 .lf-analysis-status { min-height: 64px; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 5px 12px; padding-bottom: 14px; border-bottom: 1px solid var(--lf-line); }
 .lf-analysis-status > span { grid-row: 1 / 3; display: inline-flex; align-items: center; gap: 5px; color: var(--lf-teal); font-size: 12px; font-weight: 800; }
 .lf-analysis-status small { color: var(--lf-muted); line-height: 1.5; }
@@ -320,6 +336,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lf-dialog-titlebar { display: flex; justify-content: space-between; align-items: start; }
 .lf-dialog-titlebar h2 { margin: 4px 0 0; font-size: 22px; }
 .lf-dialog-content > p { color: var(--lf-muted); line-height: 1.6; }
+.lf-provider-dialog { width: min(720px, calc(100vw - 32px)); }
+.lf-provider-state-strip { display: grid; grid-template-columns: 1fr 1fr; margin: 16px 0 6px; border-top: 1px solid var(--lf-line); border-bottom: 1px solid var(--lf-line); }
+.lf-provider-state-strip > div { min-width: 0; display: grid; gap: 3px; padding: 10px 12px 10px 0; }
+.lf-provider-state-strip > div + div { padding-left: 12px; border-left: 1px solid var(--lf-line); }
+.lf-provider-state-strip span { color: var(--lf-muted); font-size: 11px; font-weight: 800; }
+.lf-provider-state-strip strong, .lf-provider-state-strip small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lf-provider-state-strip small { color: var(--lf-muted); }
+.lf-provider-state-strip .has-draft strong { color: var(--lf-warning); }
 .lf-provider-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 18px 0; }
 .lf-provider-presets button { min-height: 38px; border: 1px solid var(--lf-line); background: var(--lf-surface); border-radius: var(--lf-radius); cursor: pointer; }
 .lf-provider-presets button.is-active { border-color: var(--lf-rose); color: var(--lf-rose); background: var(--lf-rose-soft); }
@@ -335,6 +359,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lf-secret-input { display: flex; border: 1px solid var(--lf-line); background: var(--lf-surface); border-radius: var(--lf-radius); }
 .lf-secret-input input { border: 0; }
 .lf-secret-input button { width: 40px; border: 0; background: transparent; cursor: pointer; }
+.lf-credential-section { margin: 14px 0; padding: 12px 0; border-top: 1px solid var(--lf-line); border-bottom: 1px solid var(--lf-line); }
+.lf-credential-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.lf-credential-heading > div:first-child { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.lf-credential-heading span { min-width: 0; display: grid; gap: 2px; }
+.lf-credential-heading small { color: var(--lf-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lf-credential-actions { display: flex; gap: 4px; }
+.lf-credential-actions button { min-height: 30px; padding: 0 9px; color: var(--lf-muted); border: 1px solid var(--lf-line); background: white; border-radius: 4px; cursor: pointer; }
+.lf-credential-actions button.is-active { color: var(--lf-teal); border-color: var(--lf-teal); background: var(--lf-teal-soft); }
+.lf-credential-actions button.is-danger { color: var(--lf-danger); border-color: var(--lf-danger); background: #fff3f1; }
+.lf-credential-warning { display: flex; align-items: flex-start; gap: 7px; margin: 12px 0 0 !important; color: var(--lf-danger) !important; }
 .lf-endpoint-preview { display: grid; grid-template-columns: 18px auto 1fr; gap: 7px; align-items: center; padding: 9px 10px; background: #f0eeea; color: var(--lf-muted); font-size: 12px; border-radius: var(--lf-radius); }
 .lf-endpoint-preview code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--lf-ink); }
 .lf-check { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
@@ -342,6 +376,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lf-inline-status { display: flex; gap: 7px; align-items: flex-start; color: var(--lf-teal) !important; }
 .lf-inline-status.is-warning { color: var(--lf-danger) !important; }
 .lf-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 16px; border-top: 1px solid var(--lf-line); }
+.lf-provider-dialog-actions { position: sticky; bottom: -22px; z-index: 2; margin: 14px -22px -22px; padding: 14px 22px 22px; background: rgba(251,250,247,.98); }
 .lf-workflow-import { min-height: 68px; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 10px; margin: 14px 0; padding: 10px 0; border-top: 1px solid var(--lf-line); border-bottom: 1px solid var(--lf-line); }
 .lf-workflow-import > div { display: grid; gap: 4px; }
 .lf-workflow-import small { color: var(--lf-muted); line-height: 1.45; }
@@ -454,6 +489,20 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .surface-sidepanel .lf-data-actions { width: 100%; }
 .surface-sidepanel .lf-data-actions select, .surface-sidepanel .lf-data-actions .lf-button { flex: 1; min-width: 0; }
 .surface-sidepanel .lf-data-section > .lf-button { width: 100%; }
+.surface-sidepanel .lf-failure-panel { grid-template-columns: 26px minmax(0, 1fr); padding: 11px; }
+.surface-sidepanel .lf-failure-actions { grid-column: 1 / -1; min-width: 0; grid-template-columns: 1fr 1fr; }
+.surface-sidepanel .lf-failure-actions .lf-button { min-width: 0; justify-content: center; }
+.lf-provider-dialog.surface-sidepanel { inset: 8px; top: 8px; left: 8px; width: calc(100vw - 16px); max-height: calc(100vh - 16px); transform: none; padding: 16px; }
+.lf-provider-dialog.surface-sidepanel .lf-provider-state-strip, .lf-provider-dialog.surface-sidepanel .lf-model-grid { grid-template-columns: 1fr; }
+.lf-provider-dialog.surface-sidepanel .lf-provider-state-strip > div + div { padding-left: 0; border-left: 0; border-top: 1px solid var(--lf-line); }
+.lf-provider-dialog.surface-sidepanel .lf-provider-steps { grid-template-columns: 1fr 1fr; }
+.lf-provider-dialog.surface-sidepanel .lf-provider-steps li:nth-child(2) { border-right: 0; }
+.lf-provider-dialog.surface-sidepanel .lf-provider-steps li:nth-child(-n+2) { border-bottom: 1px solid var(--lf-line); }
+.lf-provider-dialog.surface-sidepanel .lf-credential-heading { align-items: flex-start; flex-direction: column; }
+.lf-provider-dialog.surface-sidepanel .lf-credential-actions { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+.lf-provider-dialog.surface-sidepanel .lf-provider-dialog-actions { bottom: -16px; margin: 14px -16px -16px; padding: 12px 16px 16px; display: grid; grid-template-columns: 1fr 1fr; }
+.lf-provider-dialog.surface-sidepanel .lf-provider-dialog-actions .lf-button { min-width: 0; justify-content: center; }
+.lf-provider-dialog.surface-sidepanel .lf-provider-dialog-actions .lf-button:last-child { grid-column: 1 / -1; }
 
 @media (max-width: 1120px) {
   .lf-workspace { grid-template-columns: 220px minmax(560px, 1fr); }
@@ -464,6 +513,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 @media (max-width: 760px) {
   .lf-mobile-readonly { display: flex; }
+  .surface-site .lf-failure-panel { grid-template-columns: 26px minmax(0, 1fr); padding: 11px; }
+  .surface-site .lf-failure-actions { grid-column: 1 / -1; min-width: 0; grid-template-columns: 1fr 1fr; }
+  .surface-site .lf-failure-actions .lf-button { min-width: 0; justify-content: center; }
+  .surface-site .lf-failure-actions .lf-button:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .surface-site .lf-topbar { padding: 0 12px; }
   .surface-site .lf-topnav, .surface-site .lf-project, .surface-site .lf-library, .surface-site .lf-inspector { display: none; }
   .surface-site .lf-update-badge { display: none; }

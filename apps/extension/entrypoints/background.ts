@@ -4,6 +4,7 @@ import { STORAGE_KEYS } from "../shared/storage";
 import { captureSourceForStudio, handleLensflowRequest, migrateLegacyProviderSettings, resumeRemoteTasks } from "../lensflow/background-service";
 import { planLegacySettingsPersistence } from "../lensflow/legacy-provider-migration";
 import { checkManualUpdate, isChromeWebStoreInstall } from "../lensflow/release-update";
+import { toOperationFailure } from "@lensflow/core";
 import {
   CURRENT_SETTINGS_VERSION,
   DEFAULT_SETTINGS,
@@ -151,9 +152,11 @@ async function respondToRuntimeRequest(
     return { ok: true, data: await handleRequest(request, sender) };
   } catch (error) {
     console.error("[Lensflow]", error);
+    const failure = toOperationFailure(error);
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "发生未知错误。"
+      error: failure.summary,
+      failure
     };
   }
 }

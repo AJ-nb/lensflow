@@ -10,7 +10,6 @@ import {
   type ModelDescriptor,
   type ProviderCapabilities,
   type ProviderConnectionResult,
-  type ProviderProfile,
   type ReferenceKind,
   type SavePromptInput,
   type SavedPrompt,
@@ -141,7 +140,11 @@ export class DemoStudioRuntime implements StudioRuntime {
   async createKeyword(_input: Pick<KeywordCard, "axis" | "text">) { return this.readOnly(); }
   async deleteKeyword(_id: string) { return this.readOnly(); }
   async addReference(_assetId: string, _kind: ReferenceKind): Promise<StudioReference> { return this.readOnly(); }
-  async saveProvider(_profile: ProviderProfile, _secret?: string) { return this.readOnly(); }
+  async loadProviderEditorState() { return this.readOnly(); }
+  async saveProviderDraft() { return this.readOnly(); }
+  async testProviderCandidate() { return this.readOnly(); }
+  async probeProviderCandidate() { return this.readOnly(); }
+  async activateProviderCandidate() { return this.readOnly(); }
   async listModels(_providerId: string, _refresh?: boolean): Promise<ModelDescriptor[]> { return this.readOnly(); }
   async testConnection(_providerId: string): Promise<ProviderConnectionResult> { return this.readOnly(); }
   async probeCapabilities(_providerId: string): Promise<ProviderCapabilities> { return this.readOnly(); }
