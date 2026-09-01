@@ -21,6 +21,7 @@ import {
   defaultProviderCredential,
   probeResultForEditor,
   providerConnectionFingerprint,
+  providerCredentialMustBeEntered,
   providerCredentialStateLabel,
   providerFailureRecovery,
   providerFormFingerprint,
@@ -62,6 +63,7 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [lastFailedAction, setLastFailedAction] = useState<BusyAction>("");
   const workflowInputRef = useRef<HTMLInputElement>(null);
+  const secretInputRef = useRef<HTMLInputElement>(null);
   const keyManagementRef = useRef<HTMLDivElement>(null);
 
   const loadEditor = async () => {
@@ -248,17 +250,28 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
   const modelWarning = modelAssignmentWarning(draft, models);
   const hasModel = Boolean(draft.analysisModel || draft.imageModel);
   const primaryAction = providerPrimaryAction({ connected, readyToConnect: baseValid && usableCredential, hasModel, busy });
-  const credentialMustBeEntered = credential.action === "replace" && (credentialState === "missing" || Boolean(editor.active && editor.active.kind !== draft.kind));
-  const recovery = providerFailureRecovery(lastFailedAction);
+  const credentialMustBeEntered = providerCredentialMustBeEntered(credential);
+  const recovery = providerFailureRecovery(lastFailedAction, failure?.category);
+
+  const beginCredentialReplacement = () => {
+    changeCredential({ action: "replace", secret: "" });
+    setStatusTone("warning");
+    setStatus("请输入新的 API Key，再重新连接。当前活动配置与密钥未更改。");
+    window.setTimeout(() => {
+      secretInputRef.current?.scrollIntoView({ block: "center" });
+      secretInputRef.current?.focus();
+    }, 0);
+  };
 
   const retryFailure = recovery ? () => {
-    if (recovery === "activate") void activate();
+    if (recovery === "replace-credential") beginCredentialReplacement();
+    else if (recovery === "activate") void activate();
     else if (recovery === "confirm-probe") setProbeConfirmationOpen(true);
     else if (recovery === "connect") void testConnection();
     else if (recovery === "load") void loadEditor();
     else if (recovery === "save-draft") void saveDraft();
   } : undefined;
-  const retryLabel = recovery === "activate" ? "重新启用" : recovery === "confirm-probe" ? "重新确认检测" : recovery === "load" ? "重新载入" : recovery === "save-draft" ? "重新保存" : "重新连接";
+  const retryLabel = recovery === "replace-credential" ? "替换 API Key" : recovery === "activate" ? "重新启用" : recovery === "confirm-probe" ? "重新确认检测" : recovery === "load" ? "重新载入" : recovery === "save-draft" ? "重新保存" : "重新连接";
 
   const openKeyManagement = () => {
     setAdvancedOpen(true);
@@ -298,8 +311,8 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
           <div className="lf-provider-section-heading"><div><strong>Provider</strong><small>选择要连接的生成服务</small></div>{connected && <span className="lf-provider-connected"><CheckCircle2 size={14} />连接已验证</span>}</div>
           <div className="lf-provider-presets" role="group" aria-label="Provider 预设"><button type="button" className={draft.kind === "biyuan" ? "is-active" : ""} onClick={() => selectPreset("biyuan")}>彼源</button><button type="button" aria-label="OpenAI-compatible" className={draft.kind === "openai-compatible" ? "is-active" : ""} onClick={() => selectPreset("openai-compatible")}>兼容 API</button><button type="button" className={draft.kind === "comfyui" ? "is-active" : ""} onClick={() => selectPreset("comfyui")}>ComfyUI</button></div>
 
-          {draft.kind !== "comfyui" && <div className="lf-credential-section is-compact"><div className="lf-credential-heading"><div><KeyRound size={17} /><span><strong>API Key</strong><small>{credential.action === "clear" ? "启用前必须重新提供密钥" : credentialMustBeEntered && editor.active?.kind !== draft.kind ? "不会沿用当前 Provider 的密钥" : providerCredentialStateLabel(credentialState)}</small></span></div>{credentialState !== "missing" && !credentialMustBeEntered && <button type="button" className="lf-button" onClick={openKeyManagement}>管理密钥</button>}</div>
-            {credentialMustBeEntered && <label className="lf-field"><span>{credentialState === "missing" ? "API Key" : "新服务的 API Key"}</span><div className="lf-secret-input"><input type={showSecret ? "text" : "password"} value={credential.secret} onChange={(event) => changeCredential({ action: "replace", secret: event.target.value })} autoComplete="off" placeholder="输入密钥" /><button type="button" onClick={() => setShowSecret((value) => !value)} aria-label={showSecret ? "隐藏密钥" : "显示密钥"}>{showSecret ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>}
+          {draft.kind !== "comfyui" && <div className="lf-credential-section is-compact"><div className="lf-credential-heading"><div><KeyRound size={17} /><span><strong>API Key</strong><small>{credential.action === "clear" ? "启用前必须重新提供密钥" : credentialMustBeEntered && credentialState !== "missing" ? "输入新密钥后才会替换已保存凭据" : credentialMustBeEntered && editor.active?.kind !== draft.kind ? "不会沿用当前 Provider 的密钥" : providerCredentialStateLabel(credentialState)}</small></span></div>{credentialState !== "missing" && !credentialMustBeEntered && <button type="button" className="lf-button" onClick={openKeyManagement}>管理密钥</button>}</div>
+            {credentialMustBeEntered && <label className="lf-field"><span>{credentialState === "missing" ? "API Key" : "新的 API Key"}</span><div className="lf-secret-input"><input ref={secretInputRef} type={showSecret ? "text" : "password"} value={credential.action === "replace" ? credential.secret : ""} onChange={(event) => changeCredential({ action: "replace", secret: event.target.value })} autoComplete="off" placeholder="输入密钥" /><button type="button" onClick={() => setShowSecret((value) => !value)} aria-label={showSecret ? "隐藏密钥" : "显示密钥"}>{showSecret ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>}
             <small className="lf-credential-lifetime">{draft.rememberSecret ? "启用后保存在本设备" : "默认仅保留到浏览器关闭，可在高级设置中修改"}</small>
           </div>}
         </section>
@@ -318,8 +331,7 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
             <div className="lf-endpoint-preview"><Settings2 size={14} /><span>模型目录</span><code>{modelEndpoint}</code></div>
 
             {draft.kind !== "comfyui" ? <>
-              {credentialState !== "missing" && <div className="lf-key-management" ref={keyManagementRef} tabIndex={-1}><div className="lf-credential-heading"><div><KeyRound size={17} /><span><strong>管理密钥</strong><small>密钥内容不会显示</small></span></div><div className="lf-credential-actions"><button type="button" className={credential.action === "keep" ? "is-active" : ""} onClick={() => changeCredential({ action: "keep" })}>保留</button><button type="button" className={credential.action === "replace" ? "is-active" : ""} onClick={() => changeCredential({ action: "replace", secret: "" })}>替换</button><button type="button" className={credential.action === "clear" ? "is-danger" : ""} onClick={() => changeCredential({ action: "clear" })}>清除</button></div></div>
-                {credential.action === "replace" && !credentialMustBeEntered && <label className="lf-field"><span>新密钥</span><div className="lf-secret-input"><input type={showSecret ? "text" : "password"} value={credential.secret} onChange={(event) => changeCredential({ action: "replace", secret: event.target.value })} autoComplete="off" placeholder="输入后才会替换已有密钥" /><button type="button" onClick={() => setShowSecret((value) => !value)} aria-label={showSecret ? "隐藏密钥" : "显示密钥"}>{showSecret ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>}
+              {credentialState !== "missing" && <div className="lf-key-management" ref={keyManagementRef} tabIndex={-1}><div className="lf-credential-heading"><div><KeyRound size={17} /><span><strong>管理密钥</strong><small>密钥内容不会显示</small></span></div><div className="lf-credential-actions"><button type="button" className={credential.action === "keep" ? "is-active" : ""} onClick={() => changeCredential({ action: "keep" })}>保留</button><button type="button" className={credential.action === "replace" ? "is-active" : ""} onClick={beginCredentialReplacement}>替换</button><button type="button" className={credential.action === "clear" ? "is-danger" : ""} onClick={() => changeCredential({ action: "clear" })}>清除</button></div></div>
                 {credential.action === "clear" && <p className="lf-credential-warning"><AlertTriangle size={15} />清除只会写入草稿；需要密钥的 Provider 无法以此状态启用。</p>}
               </div>}
               <label className="lf-check"><input type="checkbox" checked={draft.rememberSecret} onChange={(event) => patch({ rememberSecret: event.target.checked })} /><span>在此设备记住密钥；否则关闭浏览器后清除</span></label>
@@ -333,7 +345,7 @@ export function ProviderDialog({ runtime, provider, open, onOpenChange, onSaved,
           </div>
         </details>
 
-        {failure && <FailurePanel failure={failure} onRetry={retryFailure} onSaveDraft={baseValid && recovery !== "save-draft" ? () => void saveDraft() : undefined} retryLabel={retryLabel} />}
+        {failure && <FailurePanel failure={failure} onRetry={retryFailure} onSaveDraft={baseValid && recovery !== "save-draft" ? () => void saveDraft() : undefined} retryLabel={retryLabel} retryIcon={recovery === "replace-credential" ? "key" : "retry"} />}
         {status && <p className={`lf-inline-status is-${statusTone}`} aria-live="polite">{statusTone === "warning" ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}{status}</p>}
         <div className="lf-dialog-actions lf-provider-dialog-actions"><button className="lf-button" type="button" onClick={() => void saveDraft()} disabled={Boolean(busy) || !baseValid}>{busy === "draft" ? <Loader2 className="is-spinning" size={16} /> : <Save size={16} />}保存草稿</button><button className="lf-button is-primary" type="button" onClick={() => primaryAction.kind === "connect" ? void testConnection() : void activate()} disabled={primaryAction.disabled}>{busy === "test" || busy === "activate" ? <Loader2 className="is-spinning" size={16} /> : <CheckCircle2 size={16} />}{primaryAction.label}</button></div>
       </Dialog.Content>

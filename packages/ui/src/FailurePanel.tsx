@@ -9,9 +9,10 @@ export interface FailurePanelProps {
   onConfigure?: () => void;
   onSaveDraft?: () => void;
   retryLabel?: string;
+  retryIcon?: "retry" | "key";
 }
 
-export function FailurePanel({ failure, title, onRetry, onConfigure, onSaveDraft, retryLabel = "重新尝试" }: FailurePanelProps) {
+export function FailurePanel({ failure, title, onRetry, onConfigure, onSaveDraft, retryLabel = "重新尝试", retryIcon = "retry" }: FailurePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   useEffect(() => { panelRef.current?.focus(); }, [failure.summary, failure.status]);
@@ -43,7 +44,7 @@ export function FailurePanel({ failure, title, onRetry, onConfigure, onSaveDraft
       {failure.technicalDetails && <details><summary>技术详情</summary><pre>{failure.technicalDetails}</pre></details>}
     </div>
     <div className="lf-failure-actions">
-      {onRetry && <button className="lf-button is-primary" onClick={onRetry}><RotateCw size={15} />{retryLabel}</button>}
+      {onRetry && <button className="lf-button is-primary" onClick={onRetry}>{retryIcon === "key" ? <KeyRound size={15} /> : <RotateCw size={15} />}{retryLabel}</button>}
       {onConfigure && <button className="lf-button" onClick={onConfigure}><Settings size={15} />检查 Provider</button>}
       {onSaveDraft && <button className="lf-button" onClick={onSaveDraft}><KeyRound size={15} />保存草稿</button>}
       <button className="lf-button" onClick={() => void copyDiagnostics()} aria-live="polite"><Copy size={15} />{copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制诊断"}</button>
