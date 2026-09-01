@@ -1,6 +1,6 @@
 {
   "name": "@lensflow/core",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lensflow/contracts": "0.3.2",
+    "@lensflow/contracts": "0.3.3",
     "dexie": "^4.4.4",
     "zod": "^4.4.3"
   },

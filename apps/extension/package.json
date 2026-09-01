@@ -1,6 +1,6 @@
 {
   "name": "@lensflow/extension",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,9 +12,9 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
-    "@lensflow/contracts": "0.3.2",
-    "@lensflow/core": "0.3.2",
-    "@lensflow/ui": "0.3.2",
+    "@lensflow/contracts": "0.3.3",
+    "@lensflow/core": "0.3.3",
+    "@lensflow/ui": "0.3.3",
     "@mediapipe/tasks-vision": "^1.0.1",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-tabs": "^1.1.13",
