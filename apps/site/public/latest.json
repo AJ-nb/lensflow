@@ -1,10 +1,26 @@
 {
   "schemaVersion": 2,
-  "status": "unreleased",
-  "plannedVersion": "0.3.2",
+  "status": "published",
+  "version": "0.3.2",
   "channel": "stable",
+  "publishedAt": "2026-09-01T09:38:52.822Z",
   "minimumChrome": "122",
   "bridgeProtocol": 2,
   "dataVersion": 3,
-  "minimumDataVersion": 1
+  "minimumDataVersion": 1,
+  "migration": {
+    "required": true,
+    "backupRecommended": true,
+    "notes": "首次打开会自动清理旧错误中的 HTML 和过长响应，同时保留分析、任务与历史记录；覆盖安装前建议导出备份。"
+  },
+  "artifacts": [
+    {
+      "browser": "chrome",
+      "distribution": "github-zip",
+      "url": "https://github.com/AJ-nb/lensflow/releases/download/v0.3.2/lensflow-v0.3.2-chrome.zip",
+      "sizeBytes": 17070760,
+      "sha256": "02a4a1e8318a250e539ed2f336ce04b1f3f06d887342bee1de747fec7d66ee08"
+    }
+  ],
+  "notesUrl": "https://github.com/AJ-nb/lensflow/releases/tag/v0.3.2"
 }
