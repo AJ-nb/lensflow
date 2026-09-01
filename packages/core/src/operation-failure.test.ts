@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeLegacyFailure, sanitizeTechnicalDetails, toOperationFailure } from "./operation-failure";
+import { failureFromHttpResponse, normalizeLegacyFailure, sanitizeTechnicalDetails, toOperationFailure } from "./operation-failure";
 
 describe("operation failures", () => {
   it("redacts common credential forms and caps diagnostic detail", () => {
@@ -26,5 +26,28 @@ describe("operation failures", () => {
       .toMatchObject({ category: "timeout", retryable: true, summary: "彼源响应超时" });
     expect(toOperationFailure(new Error("ComfyUI WebSocket 等待超时。"), "ComfyUI"))
       .toMatchObject({ category: "timeout", retryable: true, summary: "ComfyUI 响应超时" });
+  });
+
+  it("sanitizes request IDs from response headers before exposing them", () => {
+    const requestId = `Bearer api-key-secret\u0000\r\n${"x".repeat(400)}`;
+    const response = { status: 502, headers: { get: (name: string) => name === "x-request-id" ? requestId : null } } as unknown as Response;
+    const failure = failureFromHttpResponse(response, "upstream");
+
+    expect(failure.requestId).not.toContain("api-key-secret");
+    expect(failure.requestId).not.toMatch(/[\u0000-\u001f\u007f]/);
+    expect(failure.requestId?.length).toBeLessThanOrEqual(256);
+  });
+
+  it("sanitizes request IDs on structured failures crossing the runtime boundary", () => {
+    const failure = toOperationFailure({ failure: {
+      category: "upstream" as const,
+      retryable: true,
+      summary: "上游错误",
+      guidance: "稍后重试",
+      requestId: "Authorization: Bearer runtime-secret\u0000"
+    } });
+
+    expect(failure.requestId).not.toContain("runtime-secret");
+    expect(failure.requestId).not.toMatch(/[\u0000-\u001f\u007f]/);
   });
 });

@@ -120,7 +120,106 @@ describe("provider adapters", () => {
     vi.stubGlobal("fetch", mocked);
     const adapter = new BiyuanAdapter();
     const result = await adapter.probeCapabilities({ ...DEFAULT_BIYUAN_PROFILE, analysisModel: "analysis", imageModel: "image" }, "key");
-    expect(result).toMatchObject({ authentication: "supported", visionInput: "supported", structuredOutputs: "supported", imageGeneration: "supported", imageEditing: "supported", backgroundTasks: "supported" });
+    expect(result.capabilities).toMatchObject({ authentication: "supported", visionInput: "supported", structuredOutputs: "supported", imageGeneration: "supported", imageEditing: "supported", backgroundTasks: "supported" });
+    expect(result.failures).toEqual({});
     expect(mocked).toHaveBeenCalledTimes(5);
+  });
+
+  it.each([
+    ["plain text", "OK"],
+    ["a non-boolean ok value", '{"ok":"yes"}'],
+    ["a missing ok field", '{"result":true}']
+  ])("marks structured outputs as an error when the probe returns %s", async (_case, outputText) => {
+    const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(json({ data: [{ id: "analysis" }] }))
+      .mockResolvedValueOnce(json({ output_text: "OK" }))
+      .mockResolvedValueOnce(json({ output_text: outputText })));
+
+    const result = await new BiyuanAdapter().probeCapabilities({ ...DEFAULT_BIYUAN_PROFILE, analysisModel: "analysis", imageModel: "" }, "key");
+
+    expect(result.capabilities.structuredOutputs).toBe("error");
+    expect(result.failures.structuredOutputs).toMatchObject({
+      category: "unknown",
+      retryable: false,
+      technicalDetails: expect.stringContaining("ok")
+    });
+  });
+
+  it("keeps an endpoint 404 as unsupported without a failure record", async () => {
+    const json = (value: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(value), {
+      status: init.status ?? 200,
+      headers: { "content-type": "application/json", ...init.headers }
+    });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(json({ data: [{ id: "analysis" }] }))
+      .mockResolvedValueOnce(json({ error: { message: "not found" } }, { status: 404 }))
+      .mockResolvedValueOnce(json({ output_text: '{"ok":true}' })));
+
+    const result = await new BiyuanAdapter().probeCapabilities({ ...DEFAULT_BIYUAN_PROFILE, analysisModel: "analysis", imageModel: "" }, "key");
+
+    expect(result.capabilities.visionInput).toBe("unsupported");
+    expect(result.failures.visionInput).toBeUndefined();
+  });
+
+  it("treats a model catalog 404 as a configuration error with a failure record", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "not found" } }), {
+      status: 404,
+      headers: { "content-type": "application/json" }
+    })));
+
+    const result = await new BiyuanAdapter().probeCapabilities({ ...DEFAULT_BIYUAN_PROFILE, analysisModel: "analysis" }, "key");
+
+    expect(result.capabilities.authentication).toBe("error");
+    expect(result.failures.authentication).toMatchObject({ category: "configuration", status: 404, retryable: false });
+  });
+
+  it("rejects structured probe objects with extra fields", async () => {
+    const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(json({ data: [{ id: "analysis" }] }))
+      .mockResolvedValueOnce(json({ output_text: "OK" }))
+      .mockResolvedValueOnce(json({ output_text: '{"ok":true,"extra":1}' })));
+
+    const result = await new BiyuanAdapter().probeCapabilities({ ...DEFAULT_BIYUAN_PROFILE, analysisModel: "analysis" }, "key");
+
+    expect(result.capabilities.structuredOutputs).toBe("error");
+    expect(result.failures.structuredOutputs).toMatchObject({ category: "unknown", retryable: false });
+  });
+
+  it("keeps probe failure details and leaves untested Biyuan capabilities unknown", async () => {
+    const json = (value: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(value), {
+      status: init.status ?? 200,
+      headers: { "content-type": "application/json", ...init.headers }
+    });
+    const mocked = vi.fn()
+      .mockResolvedValueOnce(json({ data: [{ id: "gpt-5.6-sol" }] }))
+      .mockResolvedValueOnce(json({ error: { message: "image input is unavailable for this model" } }, { status: 400, headers: { "x-request-id": "vision-probe-400" } }))
+      .mockResolvedValueOnce(json({ output_text: "{\"ok\":true}" }));
+    vi.stubGlobal("fetch", mocked);
+
+    const result = await new BiyuanAdapter().probeCapabilities({
+      ...DEFAULT_BIYUAN_PROFILE,
+      analysisModel: "gpt-5.6-sol",
+      imageModel: ""
+    }, "key");
+
+    expect(result.capabilities).toEqual({
+      authentication: "supported",
+      visionInput: "error",
+      structuredOutputs: "supported",
+      imageGeneration: "unknown",
+      imageEditing: "unknown",
+      backgroundTasks: "unknown",
+      cancellation: "unsupported"
+    });
+    expect(result.failures.visionInput).toMatchObject({
+      category: "invalid-response",
+      status: 400,
+      requestId: "vision-probe-400",
+      retryable: false
+    });
+    expect(result.failures.visionInput?.technicalDetails).toContain("image input is unavailable");
+    expect(mocked).toHaveBeenCalledTimes(3);
   });
 });

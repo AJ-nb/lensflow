@@ -8,6 +8,7 @@ import type {
   GenerationBatch,
   OperationFailure,
   ProviderCandidateInput,
+  ProviderCapabilityProbeResult,
   ProviderProfile,
   ProviderConnectionResult,
   SavePromptInput,
@@ -369,7 +370,7 @@ export type RuntimeRequest =
   | { type: "LENSFLOW_SAVE_PROVIDER_DRAFT"; candidate: ProviderCandidateInput }
   | { type: "LENSFLOW_TEST_PROVIDER_CANDIDATE"; candidate: ProviderCandidateInput }
   | { type: "LENSFLOW_PROBE_PROVIDER_CANDIDATE"; candidate: ProviderCandidateInput }
-  | { type: "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE"; candidate: ProviderCandidateInput }
+  | { type: "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE"; candidate: ProviderCandidateInput; probeResult?: ProviderCapabilityProbeResult }
   | { type: "LENSFLOW_LIST_MODELS"; providerId: string; refresh?: boolean }
   | { type: "LENSFLOW_TEST_PROVIDER"; providerId: string }
   | { type: "LENSFLOW_PROBE_PROVIDER"; providerId: string }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { operationFailureSchema } from "./failure";
-import type { ModelDescriptor, ProviderCandidateInput, ProviderCapabilities, ProviderConnectionResult, ProviderEditorState, ProviderProfile } from "./provider";
+import type { ModelDescriptor, ProviderCandidateInput, ProviderCapabilities, ProviderCapabilityProbeResult, ProviderConnectionResult, ProviderEditorState, ProviderProfile } from "./provider";
 import type {
   BackupExport,
   BackupImportMode,
@@ -194,8 +194,8 @@ export interface StudioRuntime {
   loadProviderEditorState(): Promise<ProviderEditorState>;
   saveProviderDraft(candidate: ProviderCandidateInput): Promise<ProviderEditorState>;
   testProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderConnectionResult>;
-  probeProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderCapabilities>;
-  activateProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderProfile>;
+  probeProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderCapabilityProbeResult>;
+  activateProviderCandidate(candidate: ProviderCandidateInput, probeResult?: ProviderCapabilityProbeResult): Promise<ProviderProfile>;
   listModels(providerId: string, refresh?: boolean): Promise<ModelDescriptor[]>;
   testConnection(providerId: string): Promise<ProviderConnectionResult>;
   probeCapabilities(providerId: string): Promise<ProviderCapabilities>;

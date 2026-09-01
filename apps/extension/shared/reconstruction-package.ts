@@ -95,7 +95,7 @@ export function buildReconstructionManifest(input: ReconstructionPackageInput) {
   const { analysis, measured } = input.result;
   return {
     schemaVersion: "1.2",
-    generator: { name: "Lensflow", version: "0.3.1" },
+    generator: { name: "Lensflow", version: "0.3.2" },
     generatedAt: new Date().toISOString(),
     target: {
       name: analysis.title,

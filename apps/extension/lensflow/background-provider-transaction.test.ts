@@ -59,6 +59,7 @@ describe("Provider candidate transaction", () => {
     state = await handleLensflowRequest({ type: "LENSFLOW_SAVE_PROVIDER_DRAFT", candidate }) as ProviderEditorState;
     expect(state.active?.baseUrl).toBe(DEFAULT_BIYUAN_PROFILE.baseUrl);
     expect(state.draft?.baseUrl).toBe("https://candidate.example/v1");
+    expect(state).toMatchObject({ activeProbeResult: null });
     expect(state.draftCredentialState).toBe("device");
     const draftRef = state.draft!.credentialRef!;
     expect((local.values[STORAGE_KEYS.providerSecrets] as Record<string, string>)[active.id]).toBe("old-secret");
@@ -73,12 +74,82 @@ describe("Provider candidate transaction", () => {
     expect((local.values[STORAGE_KEYS.providerSecrets] as Record<string, string>)[draftRef]).toBe("new-secret");
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ id: "analysis", modalities: ["text", "image"] }] }), { status: 200, headers: { "content-type": "application/json" } })));
-    const activated = await handleLensflowRequest({ type: "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE", candidate: { profile: state.draft!, credential: { action: "keep" } } }) as typeof active;
+    const probeResult = {
+      capabilities: {
+        authentication: "supported" as const,
+        visionInput: "error" as const,
+        structuredOutputs: "supported" as const,
+        imageGeneration: "unknown" as const,
+        imageEditing: "unknown" as const,
+        backgroundTasks: "unknown" as const,
+        cancellation: "unsupported" as const
+      },
+      failures: {
+        visionInput: {
+          category: "invalid-response" as const,
+          status: 400,
+          retryable: false,
+          summary: "彼源返回了无法处理的响应",
+          guidance: "请更换支持图像输入的分析模型。",
+          requestId: "Authorization: Bearer request-secret\u0000\r\n",
+          technicalDetails: "Authorization: Bearer new-secret"
+        }
+      }
+    };
+    const activated = await handleLensflowRequest({ type: "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE", candidate: { profile: state.draft!, credential: { action: "keep" } }, probeResult }) as typeof active;
     state = await handleLensflowRequest({ type: "LENSFLOW_PROVIDER_EDITOR_STATE" }) as ProviderEditorState;
+    const verified = new LensflowDatabase();
+    const savedCapabilities = await verified.settingsMeta.get("providerCapabilities");
+    const savedProbeResult = await verified.settingsMeta.get("providerProbeResult");
+    verified.close();
     expect(state.active?.name).toBe("候选 Provider");
     expect(state.draft).toBeNull();
+    expect(state).toMatchObject({
+      activeProbeResult: {
+        capabilities: probeResult.capabilities,
+        failures: { visionInput: { ...probeResult.failures.visionInput, requestId: "Authorization: [REDACTED] [REDACTED]", technicalDetails: "Authorization: [REDACTED] [REDACTED]" } }
+      }
+    });
+    expect(savedCapabilities?.value).toEqual(probeResult.capabilities);
+    expect(savedProbeResult?.value).toMatchObject({
+      providerId: activated.id,
+      configFingerprint: expect.any(String),
+      result: {
+        capabilities: probeResult.capabilities,
+        failures: { visionInput: { ...probeResult.failures.visionInput, requestId: "Authorization: [REDACTED] [REDACTED]", technicalDetails: "Authorization: [REDACTED] [REDACTED]" } }
+      }
+    });
+    expect(JSON.stringify(savedProbeResult?.value)).not.toContain("new-secret");
+    expect(JSON.stringify(savedProbeResult?.value)).not.toContain("request-secret");
+    expect(String((savedProbeResult?.value as { configFingerprint?: unknown })?.configFingerprint)).not.toContain("new-secret");
     expect((local.values[STORAGE_KEYS.providerSecrets] as Record<string, string>)[active.id]).toBeUndefined();
     expect((local.values[STORAGE_KEYS.providerSecrets] as Record<string, string>)[draftRef]).toBeUndefined();
     expect((local.values[STORAGE_KEYS.providerSecrets] as Record<string, string>)[activated.credentialRef!]).toBe("new-secret");
+
+    state = await handleLensflowRequest({ type: "LENSFLOW_SAVE_PROVIDER_DRAFT", candidate: {
+      profile: { ...activated, name: "再次编辑" },
+      credential: { action: "keep" }
+    } }) as ProviderEditorState;
+    expect(state.draft?.name).toBe("再次编辑");
+    expect(state.activeProbeResult).toMatchObject({
+      capabilities: probeResult.capabilities,
+      failures: { visionInput: { technicalDetails: "Authorization: [REDACTED] [REDACTED]" } }
+    });
+
+    const mismatched = new LensflowDatabase();
+    await mismatched.settingsMeta.put({
+      key: "providerProbeResult",
+      value: { providerId: activated.id, configFingerprint: "wrong-config", result: probeResult },
+      updatedAt: new Date().toISOString()
+    });
+    mismatched.close();
+    state = await handleLensflowRequest({ type: "LENSFLOW_PROVIDER_EDITOR_STATE" }) as ProviderEditorState;
+    expect(state.activeProbeResult).toBeNull();
+
+    const legacy = new LensflowDatabase();
+    await legacy.settingsMeta.put({ key: "providerProbeResult", value: probeResult, updatedAt: new Date().toISOString() });
+    legacy.close();
+    state = await handleLensflowRequest({ type: "LENSFLOW_PROVIDER_EDITOR_STATE" }) as ProviderEditorState;
+    expect(state.activeProbeResult).toBeNull();
   });
 });

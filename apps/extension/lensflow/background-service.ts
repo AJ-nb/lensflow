@@ -5,6 +5,9 @@ import {
   parseBridgePayload,
   releaseUpdateNoticeSchema,
   generationSettingsSchema,
+  providerConfigFingerprint,
+  providerCapabilityProbeResultSchema,
+  providerProbeResultRecordSchema,
   providerCandidateInputSchema,
   providerProfileSchema,
   UNKNOWN_CAPABILITIES,
@@ -18,6 +21,7 @@ import {
   type EagleWorkExportResult,
   type ModelDescriptor,
   type ProviderCapabilities,
+  type ProviderCapabilityProbeResult,
   type ProviderCandidateInput,
   type ProviderConnectionResult,
   type ProviderEditorState,
@@ -45,6 +49,8 @@ import {
   redactSensitive,
   recordHistory,
   retryFailedChildren,
+  sanitizeRequestId,
+  sanitizeTechnicalDetails,
   studioSnapshotForBridge,
   toOperationFailure,
   QUICK_ANALYSIS_JSON_SCHEMA,
@@ -167,7 +173,7 @@ export async function handleLensflowRequest(request: RuntimeRequest): Promise<un
     case "LENSFLOW_PROBE_PROVIDER_CANDIDATE":
       return probeProviderCandidate(request.candidate);
     case "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE":
-      return activateProviderCandidate(request.candidate);
+      return activateProviderCandidate(request.candidate, request.probeResult);
     case "LENSFLOW_LIST_MODELS":
       return listModels(request.providerId, request.refresh);
     case "LENSFLOW_TEST_PROVIDER":
@@ -266,19 +272,26 @@ async function providerSecret(providerId: string): Promise<string> {
 }
 
 async function readProviderEditorState(): Promise<ProviderEditorState> {
-  const [activeRow, draftRow] = await Promise.all([
+  const [activeRow, draftRow, probeRow] = await Promise.all([
     db.settingsMeta.get("activeProvider"),
-    db.settingsMeta.get("providerDraft")
+    db.settingsMeta.get("providerDraft"),
+    db.settingsMeta.get("providerProbeResult")
   ]);
   const activeParsed = providerProfileSchema.safeParse(activeRow?.value);
   const draftParsed = providerProfileSchema.safeParse(draftRow?.value);
   const active = activeParsed.success ? activeParsed.data : null;
   const draft = draftParsed.success ? draftParsed.data : null;
+  const probeParsed = providerProbeResultRecordSchema.safeParse(probeRow?.value);
+  const activeProbeResult = active && probeParsed.success
+    && probeParsed.data.providerId === active.id
+    && probeParsed.data.configFingerprint === providerConfigFingerprint(active)
+    ? probeParsed.data.result
+    : null;
   const [activeCredentialState, draftCredentialState] = await Promise.all([
     active ? secrets.state(providerCredentialRef(active)) : Promise.resolve("missing" as const),
     draft ? secrets.state(providerCredentialRef(draft)) : Promise.resolve("missing" as const)
   ]);
-  return { active, draft, activeCredentialState, draftCredentialState };
+  return { active, draft, activeProbeResult, activeCredentialState, draftCredentialState };
 }
 
 async function saveProviderDraft(raw: ProviderCandidateInput): Promise<ProviderEditorState> {
@@ -303,14 +316,17 @@ async function testProviderCandidate(raw: ProviderCandidateInput): Promise<Provi
   return createProviderAdapter(candidate.profile).testConnection(candidate.profile, secret);
 }
 
-async function probeProviderCandidate(raw: ProviderCandidateInput): Promise<ProviderCapabilities> {
+async function probeProviderCandidate(raw: ProviderCandidateInput): Promise<ProviderCapabilityProbeResult> {
   const candidate = providerCandidateInputSchema.parse(raw);
   const secret = await resolveCandidateSecret(candidate);
   return createProviderAdapter(candidate.profile).probeCapabilities(candidate.profile, secret);
 }
 
-async function activateProviderCandidate(raw: ProviderCandidateInput): Promise<ProviderProfile> {
+async function activateProviderCandidate(raw: ProviderCandidateInput, rawProbeResult?: ProviderCapabilityProbeResult): Promise<ProviderProfile> {
   const candidate = providerCandidateInputSchema.parse(raw);
+  const probeResult = rawProbeResult
+    ? sanitizeProbeResult(rawProbeResult)
+    : null;
   if (!candidate.profile.analysisModel && !candidate.profile.imageModel) throw new Error("请至少选择一个分析模型或图片模型。");
   const secret = await resolveCandidateSecret(candidate);
   const connection = await createProviderAdapter(candidate.profile).testConnection(candidate.profile, secret);
@@ -325,9 +341,14 @@ async function activateProviderCandidate(raw: ProviderCandidateInput): Promise<P
         expiresAt: cachedAt + MODEL_CATALOG_CACHE_TTL_MS,
         models: connection.models
       });
-      await writeSetting(db, "providerCapabilities", { ...UNKNOWN_CAPABILITIES });
+      await writeSetting(db, "providerCapabilities", probeResult?.capabilities ?? { ...UNKNOWN_CAPABILITIES });
+      await writeSetting(db, "providerProbeResult", probeResult ? {
+        providerId: prepared.profile.id,
+        configFingerprint: providerConfigFingerprint(prepared.profile),
+        result: probeResult
+      } : null);
       await db.settingsMeta.delete("providerDraft");
-      await recordHistory(db, "provider.activated", `已验证并启用 Provider：${prepared.profile.name}`, prepared.profile.id);
+      await recordHistory(db, "provider.activated", "已完成连接验证并启用 Provider", prepared.profile.id);
     });
   } catch (error) {
     if (prepared.createdCredentialRef) await secrets.remove(prepared.createdCredentialRef).catch(() => undefined);
@@ -421,9 +442,32 @@ async function probeProvider(providerId: string): Promise<ProviderCapabilities> 
   const profile = await activeProvider(providerId);
   const secret = profile.kind === "comfyui" ? "" : await providerSecret(providerId);
   const result = await createProviderAdapter(profile).probeCapabilities(profile, secret);
-  await writeSetting(db, "providerCapabilities", result);
+  await db.transaction("rw", [db.settingsMeta], async () => {
+    await writeSetting(db, "providerCapabilities", result.capabilities);
+    const safeResult = sanitizeProbeResult(result);
+    await writeSetting(db, "providerProbeResult", {
+      providerId: profile.id,
+      configFingerprint: providerConfigFingerprint(profile),
+      result: safeResult
+    });
+  });
   await notifyChanged();
-  return result;
+  return result.capabilities;
+}
+
+function sanitizeProbeResult(raw: ProviderCapabilityProbeResult): ProviderCapabilityProbeResult {
+  const parsed = providerCapabilityProbeResultSchema.parse(redactSensitive(raw));
+  const failures = Object.fromEntries(Object.entries(parsed.failures).map(([key, failure]) => {
+    const requestId = sanitizeRequestId(failure.requestId);
+    const technicalDetails = sanitizeTechnicalDetails(failure.technicalDetails);
+    const { requestId: _requestId, technicalDetails: _technicalDetails, ...rest } = failure;
+    return [key, {
+      ...rest,
+      ...(requestId ? { requestId } : {}),
+      ...(technicalDetails ? { technicalDetails } : {})
+    }];
+  }));
+  return providerCapabilityProbeResultSchema.parse({ capabilities: parsed.capabilities, failures });
 }
 
 async function analyzeAsset(assetId: string, mode: AnalysisMode): Promise<AnalysisRecord> {

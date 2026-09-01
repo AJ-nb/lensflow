@@ -7,14 +7,17 @@ import {
   type GenerateInput,
   type ModelDescriptor,
   type ProviderAdapter,
+  type CapabilityKey,
+  type CapabilityStatus,
   type ProviderCapabilities,
+  type ProviderCapabilityProbeResult,
   type ProviderConnectionResult,
   type ProviderImage,
   type ProviderProfile,
   type ProviderTaskResult
 } from "@lensflow/contracts";
 import { endpointUrl } from "./base-url";
-import { failureFromHttpResponse, sanitizeTechnicalDetails } from "./operation-failure";
+import { failureFromHttpResponse, sanitizeTechnicalDetails, toOperationFailure } from "./operation-failure";
 
 const PROBE_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2VQAAAABJRU5ErkJggg==";
 const PROBE_PNG_DATA_URL = `data:image/png;base64,${PROBE_PNG_BASE64}`;
@@ -114,12 +117,27 @@ function parseJson(text: string): unknown {
   try { return JSON.parse(text); } catch { return undefined; }
 }
 
-async function probeStatus(action: () => Promise<unknown>): Promise<ProviderCapabilities[keyof ProviderCapabilities]> {
+async function probeStatus(action: () => Promise<unknown>, providerName: string): Promise<{ status: CapabilityStatus; failure?: import("@lensflow/contracts").OperationFailure }> {
   try {
     await action();
-    return "supported";
+    return { status: "supported" };
   } catch (error) {
-    return error instanceof ProviderHttpError && error.status === 404 ? "unsupported" : "error";
+    if (error instanceof ProviderHttpError && error.status === 404) return { status: "unsupported" };
+    return {
+      status: "error",
+      failure: toOperationFailure(error, providerName)
+    };
+  }
+}
+
+function assertStructuredProbeResult(result: AnalyzeResult): void {
+  const structured = result.structured;
+  if (!structured || typeof structured !== "object" || Array.isArray(structured)) {
+    throw new Error(`结构化输出探测未返回 {"ok":true}：${JSON.stringify(structured ?? result.text)}`);
+  }
+  const value = structured as Record<string, unknown>;
+  if (Object.keys(value).length !== 1 || value.ok !== true) {
+    throw new Error(`结构化输出探测未返回 {"ok":true}：${JSON.stringify(structured ?? result.text)}`);
   }
 }
 
@@ -165,25 +183,37 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     };
   }
 
-  async probeCapabilities(profile: ProviderProfile, secret: string, signal?: AbortSignal): Promise<ProviderCapabilities> {
-    const result = { ...this.capabilities(profile) };
+  async probeCapabilities(profile: ProviderProfile, secret: string, signal?: AbortSignal): Promise<ProviderCapabilityProbeResult> {
+    const declared = this.capabilities(profile);
+    const capabilities: ProviderCapabilities = {
+      ...UNKNOWN_CAPABILITIES,
+      cancellation: declared.cancellation
+    };
+    const failures: ProviderCapabilityProbeResult["failures"] = {};
+    const record = async (key: CapabilityKey, action: () => Promise<unknown>) => {
+      const probe = await probeStatus(action, profile.name);
+      capabilities[key] = probe.status;
+      if (probe.failure) failures[key] = probe.failure;
+    };
     try {
       await this.listModels(profile, secret, signal);
-      result.authentication = "supported";
-    } catch {
-      return { ...result, authentication: "error" };
+      capabilities.authentication = "supported";
+    } catch (error) {
+      capabilities.authentication = "error";
+      failures.authentication = toOperationFailure(error, profile.name);
+      return { capabilities, failures };
     }
 
     if (profile.analysisModel) {
-      result.visionInput = await probeStatus(async () => {
+      await record("visionInput", async () => {
         await this.analyze(profile, secret, {
           prompt: "Reply with the single word OK after inspecting this image.",
           imageDataUrl: PROBE_PNG_DATA_URL,
           signal
         });
       });
-      result.structuredOutputs = await probeStatus(async () => {
-        await this.analyze(profile, secret, {
+      await record("structuredOutputs", async () => {
+        const result = await this.analyze(profile, secret, {
           prompt: "Return JSON with ok set to true.",
           schema: {
             type: "object",
@@ -193,40 +223,41 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
           },
           signal
         });
+        assertStructuredProbeResult(result);
       });
     }
 
     if (profile.imageModel) {
       let generated: ProviderTaskResult | undefined;
-      result.imageGeneration = await probeStatus(async () => {
+      await record("imageGeneration", async () => {
         generated = await this.generate(profile, secret, {
           prompt: "A plain white square on a black background. Capability probe.",
           model: profile.imageModel,
           size: "1024x1024",
           quality: "low",
           count: 1,
-          async: result.backgroundTasks === "supported",
+          async: declared.backgroundTasks === "supported",
           signal
         });
         if (generated.state === "failed") throw new Error(generated.error || "图片生成探测失败。");
       });
-      if (result.backgroundTasks !== "unsupported" && generated) {
-        result.backgroundTasks = generated.remoteId && generated.state !== "succeeded" ? "supported" : result.backgroundTasks;
+      if (declared.backgroundTasks !== "unsupported" && generated?.remoteId && generated.state !== "succeeded") {
+        capabilities.backgroundTasks = "supported";
       }
-      result.imageEditing = await probeStatus(async () => {
+      await record("imageEditing", async () => {
         const edited = await this.edit(profile, secret, {
           prompt: "Keep the image unchanged. Capability probe.",
           model: profile.imageModel,
           size: "1024x1024",
           quality: "low",
           image: probePngBlob(),
-          async: result.backgroundTasks === "supported",
+          async: declared.backgroundTasks === "supported",
           signal
         });
         if (edited.state === "failed") throw new Error(edited.error || "图片编辑探测失败。");
       });
     }
-    return result;
+    return { capabilities, failures };
   }
 
   async analyze(profile: ProviderProfile, secret: string, input: AnalyzeInput): Promise<AnalyzeResult> {
@@ -424,9 +455,9 @@ export class ComfyUIAdapter implements ProviderAdapter {
     return { reachable: true, endpoint: endpointUrl(profile.baseUrl, "object_info"), latencyMs: Math.round(performance.now() - started), models, warnings: [] };
   }
 
-  async probeCapabilities(profile: ProviderProfile, secret: string, signal?: AbortSignal): Promise<ProviderCapabilities> {
+  async probeCapabilities(profile: ProviderProfile, secret: string, signal?: AbortSignal): Promise<ProviderCapabilityProbeResult> {
     await this.listModels(profile, secret, signal);
-    return this.capabilities();
+    return { capabilities: this.capabilities(), failures: {} };
   }
 
   async analyze(): Promise<AnalyzeResult> {

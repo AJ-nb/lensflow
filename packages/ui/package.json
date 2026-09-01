@@ -1,6 +1,6 @@
 {
   "name": "@lensflow/ui",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lensflow/contracts": "0.3.1",
-    "@lensflow/core": "0.3.1",
+    "@lensflow/contracts": "0.3.2",
+    "@lensflow/core": "0.3.2",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-tabs": "^1.1.13",

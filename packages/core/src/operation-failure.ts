@@ -1,6 +1,7 @@
 import type { OperationFailure } from "@lensflow/contracts";
 
 const TECHNICAL_DETAILS_LIMIT = 2048;
+const REQUEST_ID_LIMIT = 256;
 
 export function sanitizeTechnicalDetails(input: unknown): string | undefined {
   const serialized = serializeDetail(input);
@@ -25,11 +26,22 @@ export function sanitizeTechnicalDetails(input: unknown): string | undefined {
   return sanitized.slice(0, TECHNICAL_DETAILS_LIMIT);
 }
 
+export function sanitizeRequestId(input: unknown): string | undefined {
+  const sanitized = sanitizeTechnicalDetails(input);
+  return sanitized?.slice(0, REQUEST_ID_LIMIT) || undefined;
+}
+
+function sanitizeOperationFailure(failure: OperationFailure): OperationFailure {
+  const requestId = sanitizeRequestId(failure.requestId);
+  const { requestId: _requestId, ...rest } = failure;
+  return requestId ? { ...rest, requestId } : rest;
+}
+
 export function failureFromHttpResponse(response: Response, body: unknown, providerName = "Provider"): OperationFailure {
   const status = response.status;
   const subject = providerSubject(providerName);
   const requestId = ["x-request-id", "request-id", "cf-ray"]
-    .map((name) => response.headers.get(name)?.trim())
+    .map((name) => sanitizeRequestId(response.headers.get(name)))
     .find(Boolean);
   const technicalDetails = sanitizeTechnicalDetails(extractDetail(body) ?? body);
   const shared = { status, requestId, technicalDetails };
@@ -44,7 +56,7 @@ export function failureFromHttpResponse(response: Response, body: unknown, provi
 }
 
 export function toOperationFailure(error: unknown, providerName = "Provider"): OperationFailure {
-  if (isFailureCarrier(error)) return error.failure;
+  if (isFailureCarrier(error)) return sanitizeOperationFailure(error.failure);
   if (error instanceof DOMException && error.name === "AbortError") return { category: "cancelled", retryable: false, summary: "操作已取消", guidance: "Lensflow 没有自动重发请求。" };
   const message = error instanceof Error ? error.message : String(error || "未知错误");
   if ((error instanceof DOMException && error.name === "TimeoutError") || /(?:timed?\s*out|timeout|超时)/i.test(message)) return {

@@ -15,6 +15,7 @@ import type {
   ModelDescriptor,
   OperationFailure,
   ProviderCandidateInput,
+  ProviderCapabilityProbeResult,
   ProviderCapabilities,
   ProviderConnectionResult,
   ProviderEditorState,
@@ -113,14 +114,14 @@ export class ExtensionStudioRuntime implements StudioRuntime {
     return send({ type: "LENSFLOW_TEST_PROVIDER_CANDIDATE", candidate });
   }
 
-  async probeProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderCapabilities> {
+  async probeProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderCapabilityProbeResult> {
     await ensureOriginPermission(candidate.profile);
     return send({ type: "LENSFLOW_PROBE_PROVIDER_CANDIDATE", candidate });
   }
 
-  async activateProviderCandidate(candidate: ProviderCandidateInput): Promise<ProviderProfile> {
+  async activateProviderCandidate(candidate: ProviderCandidateInput, probeResult?: ProviderCapabilityProbeResult): Promise<ProviderProfile> {
     await ensureOriginPermission(candidate.profile);
-    return send({ type: "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE", candidate });
+    return send({ type: "LENSFLOW_ACTIVATE_PROVIDER_CANDIDATE", candidate, probeResult });
   }
 
   async listModels(providerId: string, refresh?: boolean): Promise<ModelDescriptor[]> {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { operationFailureSchema, type OperationFailure } from "./failure";
 
 export const capabilityStatusSchema = z.enum(["supported", "unsupported", "unknown", "error"]);
 export type CapabilityStatus = z.infer<typeof capabilityStatusSchema>;
@@ -25,6 +26,18 @@ export const providerProfileSchema = z.object({
 });
 export type ProviderProfile = z.infer<typeof providerProfileSchema>;
 
+export function providerConfigFingerprint(profile: ProviderProfile): string {
+  return JSON.stringify({
+    kind: profile.kind,
+    baseUrl: profile.baseUrl,
+    protocolMode: profile.protocolMode,
+    analysisModel: profile.analysisModel,
+    imageModel: profile.imageModel,
+    comfyWorkflow: profile.comfyWorkflow ?? null,
+    credentialRef: profile.credentialRef ?? null
+  });
+}
+
 export const providerCredentialMutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("keep") }),
   z.object({ action: z.literal("replace"), secret: z.string().trim().min(1).max(8192) }),
@@ -40,14 +53,6 @@ export type ProviderCandidateInput = z.infer<typeof providerCandidateInputSchema
 
 export const providerCredentialStateSchema = z.enum(["missing", "session", "device"]);
 export type ProviderCredentialState = z.infer<typeof providerCredentialStateSchema>;
-
-export const providerEditorStateSchema = z.object({
-  active: providerProfileSchema.nullable(),
-  draft: providerProfileSchema.nullable(),
-  activeCredentialState: providerCredentialStateSchema,
-  draftCredentialState: providerCredentialStateSchema
-});
-export type ProviderEditorState = z.infer<typeof providerEditorStateSchema>;
 
 export const DEFAULT_BIYUAN_PROFILE: ProviderProfile = {
   id: "biyuan",
@@ -81,6 +86,43 @@ export const providerCapabilitiesSchema = z.object({
   cancellation: capabilityStatusSchema
 });
 export type ProviderCapabilities = z.infer<typeof providerCapabilitiesSchema>;
+
+export const CAPABILITY_KEYS = [
+  "authentication",
+  "visionInput",
+  "structuredOutputs",
+  "imageGeneration",
+  "imageEditing",
+  "backgroundTasks",
+  "cancellation"
+] as const;
+export const capabilityKeySchema = z.enum(CAPABILITY_KEYS);
+export type CapabilityKey = z.infer<typeof capabilityKeySchema>;
+
+export const providerCapabilityProbeResultSchema = z.object({
+  capabilities: providerCapabilitiesSchema,
+  failures: z.partialRecord(capabilityKeySchema, operationFailureSchema).default({})
+});
+export type ProviderCapabilityProbeResult = {
+  capabilities: ProviderCapabilities;
+  failures: Partial<Record<CapabilityKey, OperationFailure>>;
+};
+
+export const providerProbeResultRecordSchema = z.object({
+  providerId: z.string().min(1),
+  configFingerprint: z.string().min(1),
+  result: providerCapabilityProbeResultSchema
+});
+export type ProviderProbeResultRecord = z.infer<typeof providerProbeResultRecordSchema>;
+
+export const providerEditorStateSchema = z.object({
+  active: providerProfileSchema.nullable(),
+  draft: providerProfileSchema.nullable(),
+  activeProbeResult: providerCapabilityProbeResultSchema.nullable(),
+  activeCredentialState: providerCredentialStateSchema,
+  draftCredentialState: providerCredentialStateSchema
+});
+export type ProviderEditorState = z.infer<typeof providerEditorStateSchema>;
 
 export const UNKNOWN_CAPABILITIES: ProviderCapabilities = {
   authentication: "unknown",
@@ -149,7 +191,7 @@ export interface ProviderTaskResult {
 export interface ProviderAdapter {
   listModels(profile: ProviderProfile, secret: string, signal?: AbortSignal): Promise<ModelDescriptor[]>;
   testConnection(profile: ProviderProfile, secret: string, signal?: AbortSignal): Promise<ProviderConnectionResult>;
-  probeCapabilities(profile: ProviderProfile, secret: string, signal?: AbortSignal): Promise<ProviderCapabilities>;
+  probeCapabilities(profile: ProviderProfile, secret: string, signal?: AbortSignal): Promise<ProviderCapabilityProbeResult>;
   analyze(profile: ProviderProfile, secret: string, input: AnalyzeInput): Promise<AnalyzeResult>;
   generate(profile: ProviderProfile, secret: string, input: GenerateInput): Promise<ProviderTaskResult>;
   edit(profile: ProviderProfile, secret: string, input: EditInput): Promise<ProviderTaskResult>;
