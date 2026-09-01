@@ -4,6 +4,7 @@ import {
   defaultProviderCredential,
   probeResultForEditor,
   providerConnectionFingerprint,
+  providerCredentialMustBeEntered,
   providerFailureRecovery,
   providerFormFingerprint,
   providerProfileForPreset,
@@ -87,6 +88,18 @@ describe("Provider editor state", () => {
     expect(providerFailureRecovery("test")).toBe("connect");
     expect(providerFailureRecovery("refresh")).toBe("connect");
     expect(providerFailureRecovery("load")).toBe("load");
+  });
+
+  it("requires credential replacement after a Provider rejects authentication", () => {
+    expect(providerFailureRecovery("test", "authentication")).toBe("replace-credential");
+    expect(providerFailureRecovery("refresh", "authentication")).toBe("replace-credential");
+    expect(providerFailureRecovery("activate", "authentication")).toBe("replace-credential");
+  });
+
+  it("keeps a replacement key input visible even when a saved credential exists", () => {
+    expect(providerCredentialMustBeEntered({ action: "replace", secret: "" })).toBe(true);
+    expect(providerCredentialMustBeEntered({ action: "replace", secret: "new-key" })).toBe(true);
+    expect(providerCredentialMustBeEntered({ action: "keep" })).toBe(false);
   });
 
   it("keeps same-preset edits and clears incompatible fields only when switching services", () => {

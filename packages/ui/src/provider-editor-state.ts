@@ -1,4 +1,4 @@
-import { DEFAULT_BIYUAN_PROFILE, type ModelDescriptor, type ProviderCredentialMutation, type ProviderCredentialState, type ProviderEditorState, type ProviderProfile, type ProviderCapabilityProbeResult } from "@lensflow/contracts";
+import { DEFAULT_BIYUAN_PROFILE, type ModelDescriptor, type OperationFailure, type ProviderCredentialMutation, type ProviderCredentialState, type ProviderEditorState, type ProviderProfile, type ProviderCapabilityProbeResult } from "@lensflow/contracts";
 import { normalizeBaseUrl } from "@lensflow/core";
 
 export function defaultProviderCredential(profile: ProviderProfile, state: ProviderCredentialState, previousKind?: ProviderProfile["kind"]): ProviderCredentialMutation {
@@ -34,13 +34,18 @@ export function providerPrimaryAction(input: { connected: boolean; readyToConnec
   };
 }
 
-export function providerFailureRecovery(action: string): "activate" | "confirm-probe" | "connect" | "load" | "save-draft" | null {
+export function providerFailureRecovery(action: string, category?: OperationFailure["category"]): "activate" | "confirm-probe" | "connect" | "load" | "replace-credential" | "save-draft" | null {
+  if (category === "authentication" && ["activate", "probe", "refresh", "test"].includes(action)) return "replace-credential";
   if (action === "activate") return "activate";
   if (action === "probe") return "confirm-probe";
   if (action === "test" || action === "refresh") return "connect";
   if (action === "load") return "load";
   if (action === "draft") return "save-draft";
   return null;
+}
+
+export function providerCredentialMustBeEntered(credential: ProviderCredentialMutation): boolean {
+  return credential.action === "replace";
 }
 
 export function providerProfileForPreset(current: ProviderProfile, kind: ProviderProfile["kind"]): ProviderProfile {
